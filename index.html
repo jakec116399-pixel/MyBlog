@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="login-screen">
+  <form id="login-form" class="login-card">
+    <h1>Journal</h1>
+    <p class="login-sub">Sign in to open your notebook.</p>
+    <label for="email">Email</label>
+    <input type="email" id="email" required autocomplete="username" />
+    <label for="password">Password</label>
+    <input type="password" id="password" required autocomplete="current-password" />
+    <button type="submit" id="login-btn">Sign in</button>
+    <p id="login-error" class="login-error"></p>
+  </form>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">My journal</span>
+      <div class="sidebar-actions">
+        <button id="new-folder-btn" title="New folder" class="icon-btn">+ folder</button>
+        <button id="new-file-btn" title="New entry" class="icon-btn">+ entry</button>
+      </div>
+    </div>
+    <div id="tree" class="tree"></div>
+    <button id="logout-btn" class="logout-btn">Sign out</button>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar">
+      <button data-action="h1" class="tb-btn">H1</button>
+      <button data-action="h2" class="tb-btn">H2</button>
+      <button data-action="bold" class="tb-btn tb-bold">B</button>
+      <button data-action="italic" class="tb-btn tb-italic">i</button>
+      <button data-action="list" class="tb-btn">List</button>
+      <span class="save-status" id="save-status"></span>
+      <button id="delete-entry-btn" class="tb-btn tb-danger">Delete</button>
+    </div>
+    <div class="page-wrap">
+      <div class="page" id="page">
+        <input id="entry-title" class="entry-title" placeholder="Untitled entry" />
+        <textarea id="entry-editor" class="entry-editor" placeholder="Start writing..."></textarea>
+      </div>
+      <p id="empty-state" class="empty-state hidden">Select an entry on the left, or create a new one.</p>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
