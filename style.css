@@ -251,6 +251,27 @@ html, body {
 .tb-danger { margin-left: auto; color: #e0a3a3; border-color: rgba(224,163,163,0.3); }
 .tb-danger:hover { background: rgba(161,61,61,0.25); }
 
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 4px;
+}
+
+.tb-select {
+  font-family: var(--sans);
+  font-size: 12px;
+  background: rgba(255,255,255,0.05);
+  color: var(--cream-text);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.tb-select:hover { background: rgba(255,255,255,0.1); }
+.tb-select:focus { outline: none; border-color: var(--accent); }
+
 .save-status {
   font-size: 11px;
   color: var(--cream-muted);
@@ -265,14 +286,103 @@ html, body {
   justify-content: center;
 }
 
+/* ---------- Page: scoped variables, overridden per theme + note type ---------- */
 .page {
-  background: var(--paper);
+  /* defaults = Classic theme */
+  --page-paper: #faf6ec;
+  --page-ink: #24211c;
+  --page-title-border: #d8cfb5;
+  --page-shadow: rgba(36, 33, 28, 0.18);
+  --page-font: 'Courier Prime', 'Courier New', monospace;
+  --page-line-height: 1.9;
+  --page-ruled: transparent;
+
+  background: var(--page-paper);
+  color: var(--page-ink);
   width: 100%;
   max-width: 680px;
   min-height: 100%;
   padding: 3.5rem 3.5rem 4rem;
-  box-shadow: 0 10px 40px var(--paper-shadow), 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 10px 40px var(--page-shadow), 0 2px 8px rgba(0,0,0,0.15);
   border-radius: 1px;
+  transition: background 0.15s ease, color 0.15s ease;
+  background-image: var(--page-texture, none);
+  background-size: var(--page-texture-size, auto);
+}
+
+/* ----- Themes: paper + ink color only ----- */
+.page[data-theme="classic"] {
+  --page-paper: #faf6ec;
+  --page-ink: #24211c;
+  --page-title-border: #d8cfb5;
+}
+
+.page[data-theme="night"] {
+  --page-paper: #232320;
+  --page-ink: #e9e4d6;
+  --page-title-border: #4a453a;
+  --page-shadow: rgba(0, 0, 0, 0.5);
+}
+
+.page[data-theme="sepia"] {
+  --page-paper: #e8dcc4;
+  --page-ink: #5b4632;
+  --page-title-border: #cbb894;
+}
+
+.page[data-theme="blueprint"] {
+  --page-paper: #1b3a5c;
+  --page-ink: #eef4fb;
+  --page-title-border: #3a5d82;
+  --page-shadow: rgba(0, 10, 30, 0.5);
+}
+
+.page[data-theme="mint"] {
+  --page-paper: #e6efe4;
+  --page-ink: #2f4a34;
+  --page-title-border: #c3d6bf;
+}
+
+/* ----- Note types: font, page shape, texture ----- */
+.page[data-note-type="plain"] {
+  --page-font: 'Courier Prime', 'Courier New', monospace;
+  max-width: 680px;
+}
+
+.page[data-note-type="scriptwriter"] {
+  --page-font: 'Courier Prime', 'Courier New', monospace;
+  max-width: 560px;
+  padding-left: 4.5rem;
+  padding-right: 4.5rem;
+}
+
+.page[data-note-type="author"] {
+  --page-font: 'Lora', Georgia, serif;
+  --page-line-height: 1.75;
+  max-width: 680px;
+}
+
+.page[data-note-type="diary"] {
+  --page-font: 'Kalam', cursive;
+  --page-line-height: 2.1;
+  max-width: 600px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 37px,
+    var(--page-title-border) 38px
+  );
+}
+
+.page[data-note-type="postit"] {
+  --page-font: 'Patrick Hand', cursive;
+  --page-line-height: 1.6;
+  max-width: 320px;
+  min-height: 320px;
+  padding: 2rem 2rem 2.5rem;
+  align-self: flex-start;
+  box-shadow: 4px 6px 16px var(--page-shadow);
+  transform: rotate(-0.6deg);
 }
 
 .entry-title {
@@ -280,13 +390,19 @@ html, body {
   width: 100%;
   border: none;
   background: transparent;
-  font-family: var(--typewriter);
+  font-family: var(--page-font);
   font-weight: 700;
   font-size: 22px;
-  color: var(--ink);
+  color: var(--page-ink);
   margin-bottom: 18px;
   padding-bottom: 12px;
-  border-bottom: 1px dashed #d8cfb5;
+  border-bottom: 1px dashed var(--page-title-border);
+}
+
+.page[data-note-type="postit"] .entry-title {
+  font-size: 18px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
 }
 
 .entry-title:focus { outline: none; }
@@ -298,10 +414,15 @@ html, body {
   border: none;
   resize: none;
   background: transparent;
-  font-family: var(--typewriter);
+  font-family: var(--page-font);
   font-size: 15px;
-  line-height: 1.9;
-  color: var(--ink);
+  line-height: var(--page-line-height);
+  color: var(--page-ink);
+}
+
+.page[data-note-type="postit"] .entry-editor {
+  min-height: 200px;
+  font-size: 14px;
 }
 
 .entry-editor:focus { outline: none; }
@@ -317,4 +438,5 @@ html, body {
 @media (max-width: 640px) {
   .sidebar { width: 200px; }
   .page { padding: 2rem 1.5rem; }
+}
 }
