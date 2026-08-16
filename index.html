@@ -6,7 +6,7 @@
 <title>Journal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&family=Kalam:wght@400;700&family=Patrick+Hand&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -46,6 +46,25 @@
       <button data-action="bold" class="tb-btn tb-bold">B</button>
       <button data-action="italic" class="tb-btn tb-italic">i</button>
       <button data-action="list" class="tb-btn">List</button>
+
+      <span class="toolbar-divider"></span>
+
+      <select id="note-type-select" class="tb-select" title="Note type">
+        <option value="plain">Plain</option>
+        <option value="scriptwriter">Scriptwriter</option>
+        <option value="author">Author</option>
+        <option value="diary">Diary</option>
+        <option value="postit">Post-it</option>
+      </select>
+
+      <select id="theme-select" class="tb-select" title="Theme">
+        <option value="classic">Classic</option>
+        <option value="night">Night</option>
+        <option value="sepia">Sepia</option>
+        <option value="blueprint">Blueprint</option>
+        <option value="mint">Mint</option>
+      </select>
+
       <span class="save-status" id="save-status"></span>
       <button id="delete-entry-btn" class="tb-btn tb-danger">Delete</button>
     </div>
