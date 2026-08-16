@@ -22,17 +22,28 @@ const logoutBtn = document.getElementById("logout-btn");
 const titleInput = document.getElementById("entry-title");
 const editorInput = document.getElementById("entry-editor");
 const pageEl = document.getElementById("page");
+const pageTabsEl = document.getElementById("page-tabs");
 const emptyState = document.getElementById("empty-state");
 const saveStatus = document.getElementById("save-status");
 const deleteEntryBtn = document.getElementById("delete-entry-btn");
 const noteTypeSelect = document.getElementById("note-type-select");
 const themeSelect = document.getElementById("theme-select");
 
+const NOTE_TYPE_LABELS = {
+  plain: "Plain",
+  scriptwriter: "Scriptwriter",
+  author: "Author",
+  diary: "Diary",
+  postit: "Post-it",
+};
+
 // ---------- State ----------
 let folders = [];
-let entries = [];
+let entries = [];               // lightweight: id, title, folder_id
 let openFolderIds = new Set();
 let currentEntryId = null;
+let pages = [];                 // pages belonging to the currently open entry
+let currentPageId = null;
 let saveTimer = null;
 
 // ---------- Auth ----------
@@ -82,6 +93,7 @@ loginForm.addEventListener("submit", async (e) => {
 logoutBtn.addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
   currentEntryId = null;
+  currentPageId = null;
   showLogin();
 });
 
@@ -90,7 +102,7 @@ async function loadData() {
   const [{ data: folderData, error: folderErr }, { data: entryData, error: entryErr }] =
     await Promise.all([
       supabaseClient.from("folders").select("*").order("created_at"),
-      supabaseClient.from("entries").select("*").order("created_at"),
+      supabaseClient.from("entries").select("id, title, folder_id, created_at").order("created_at"),
     ]);
 
   if (folderErr || entryErr) {
@@ -196,22 +208,24 @@ newFolderBtn.addEventListener("click", async () => {
 });
 
 newFileBtn.addEventListener("click", async () => {
-  const { data, error } = await supabaseClient
+  const { data: entryData, error: entryErr } = await supabaseClient
     .from("entries")
-    .insert({
-      title: "Untitled entry",
-      content: "",
-      folder_id: currentParentFolderId(),
-      note_type: "plain",
-      theme: "classic",
-    })
+    .insert({ title: "Untitled entry", folder_id: currentParentFolderId() })
+    .select("id, title, folder_id, created_at")
+    .single();
+  if (entryErr) return console.error(entryErr);
+
+  const { data: pageData, error: pageErr } = await supabaseClient
+    .from("pages")
+    .insert({ entry_id: entryData.id, note_type: "plain", theme: "classic", content: "", position: 0 })
     .select()
     .single();
-  if (error) return console.error(error);
-  entries.push(data);
-  if (data.folder_id) openFolderIds.add(data.folder_id);
+  if (pageErr) return console.error(pageErr);
+
+  entries.push(entryData);
+  if (entryData.folder_id) openFolderIds.add(entryData.folder_id);
   renderTree();
-  openEntry(data.id);
+  await openEntry(entryData.id, [pageData]);
 });
 
 // New items are added at the root for simplicity; open the folder you want
@@ -231,12 +245,14 @@ async function deleteFolder(id) {
 }
 
 async function deleteEntry(id) {
-  if (!confirm("Delete this entry?")) return;
+  if (!confirm("Delete this entry and all its pages?")) return;
   const { error } = await supabaseClient.from("entries").delete().eq("id", id);
   if (error) return console.error(error);
   entries = entries.filter((e) => e.id !== id);
   if (currentEntryId === id) {
     currentEntryId = null;
+    currentPageId = null;
+    pages = [];
     showEmptyState();
   }
   renderTree();
@@ -246,16 +262,43 @@ deleteEntryBtn.addEventListener("click", () => {
   if (currentEntryId) deleteEntry(currentEntryId);
 });
 
-// ---------- Opening / editing entries ----------
-function openEntry(id) {
+// ---------- Opening entries & their pages ----------
+async function openEntry(id, preloadedPages) {
+  await flushSave();
+
   const entry = entries.find((e) => e.id === id);
   if (!entry) return;
+
   currentEntryId = id;
   titleInput.value = entry.title || "";
-  editorInput.value = entry.content || "";
-  applyAppearance(entry.note_type || "plain", entry.theme || "classic");
+
+  if (preloadedPages) {
+    pages = preloadedPages;
+  } else {
+    const { data, error } = await supabaseClient
+      .from("pages")
+      .select("*")
+      .eq("entry_id", id)
+      .order("position");
+    if (error) {
+      console.error(error);
+      return;
+    }
+    pages = data && data.length ? data : [];
+  }
+
+  currentPageId = pages[0] ? pages[0].id : null;
+  renderPageTabs();
+  loadPageIntoEditor(currentPageId);
   showEditor();
   renderTree();
+}
+
+function loadPageIntoEditor(pageId) {
+  const page = pages.find((p) => p.id === pageId);
+  if (!page) return;
+  editorInput.value = page.content || "";
+  applyAppearance(page.note_type || "plain", page.theme || "classic");
 }
 
 function applyAppearance(noteType, theme) {
@@ -265,47 +308,103 @@ function applyAppearance(noteType, theme) {
   themeSelect.value = theme;
 }
 
+// ---------- Page tabs ----------
+function renderPageTabs() {
+  pageTabsEl.innerHTML = "";
+  if (pages.length <= 1) return; // no need to show tabs for a single page
+
+  pages.forEach((page) => {
+    const tab = document.createElement("div");
+    tab.className = "page-tab" + (page.id === currentPageId ? " active" : "");
+    tab.innerHTML = `
+      <span>${NOTE_TYPE_LABELS[page.note_type] || page.note_type}</span>
+      <span class="tab-close" title="Delete this page">✕</span>
+    `;
+    tab.querySelector("span").addEventListener("click", () => switchToPage(page.id));
+    tab.querySelector(".tab-close").addEventListener("click", (e) => {
+      e.stopPropagation();
+      deletePage(page.id);
+    });
+    pageTabsEl.appendChild(tab);
+  });
+}
+
+async function switchToPage(pageId) {
+  if (pageId === currentPageId) return;
+  await flushSave();
+  currentPageId = pageId;
+  loadPageIntoEditor(pageId);
+  renderPageTabs();
+}
+
+async function deletePage(pageId) {
+  if (pages.length <= 1) {
+    alert("An entry needs at least one page.");
+    return;
+  }
+  if (!confirm("Delete this page?")) return;
+  const { error } = await supabaseClient.from("pages").delete().eq("id", pageId);
+  if (error) return console.error(error);
+
+  pages = pages.filter((p) => p.id !== pageId);
+  if (currentPageId === pageId) {
+    currentPageId = pages[0].id;
+    loadPageIntoEditor(currentPageId);
+  }
+  renderPageTabs();
+}
+
 function showEditor() {
   pageEl.classList.remove("hidden");
+  pageTabsEl.classList.remove("hidden");
   emptyState.classList.add("hidden");
 }
 
 function showEmptyState() {
   pageEl.classList.add("hidden");
+  pageTabsEl.classList.add("hidden");
   emptyState.classList.remove("hidden");
 }
 
+// ---------- Saving ----------
 function scheduleSave() {
   saveStatus.textContent = "Saving...";
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveCurrentEntry, 600);
+  saveTimer = setTimeout(saveCurrent, 600);
 }
 
-async function saveCurrentEntry() {
-  if (!currentEntryId) return;
-  const { error } = await supabaseClient
-    .from("entries")
-    .update({
-      title: titleInput.value || "Untitled entry",
-      content: editorInput.value,
-      note_type: noteTypeSelect.value,
-      theme: themeSelect.value,
-    })
-    .eq("id", currentEntryId);
+// Immediately persist any pending edit, e.g. before switching pages/entries.
+async function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await saveCurrent();
+}
 
-  if (error) {
+async function saveCurrent() {
+  if (!currentEntryId || !currentPageId) return;
+
+  const newTitle = titleInput.value || "Untitled entry";
+  const page = pages.find((p) => p.id === currentPageId);
+
+  const [{ error: entryErr }, { error: pageErr }] = await Promise.all([
+    supabaseClient.from("entries").update({ title: newTitle }).eq("id", currentEntryId),
+    supabaseClient
+      .from("pages")
+      .update({ content: editorInput.value, note_type: page.note_type, theme: page.theme })
+      .eq("id", currentPageId),
+  ]);
+
+  if (entryErr || pageErr) {
     saveStatus.textContent = "Could not save";
-    console.error(error);
+    console.error(entryErr || pageErr);
     return;
   }
 
   const entry = entries.find((e) => e.id === currentEntryId);
-  if (entry) {
-    entry.title = titleInput.value || "Untitled entry";
-    entry.content = editorInput.value;
-    entry.note_type = noteTypeSelect.value;
-    entry.theme = themeSelect.value;
-  }
+  if (entry) entry.title = newTitle;
+  page.content = editorInput.value;
+
   saveStatus.textContent = "Saved";
   renderTree();
 }
@@ -313,12 +412,53 @@ async function saveCurrentEntry() {
 titleInput.addEventListener("input", scheduleSave);
 editorInput.addEventListener("input", scheduleSave);
 
-noteTypeSelect.addEventListener("change", () => {
-  pageEl.setAttribute("data-note-type", noteTypeSelect.value);
-  scheduleSave();
+// ---------- Note type dropdown ----------
+// Blank current page -> overwrite its type in place.
+// Page has content -> spin off a new page, switch to it, leave the original untouched.
+noteTypeSelect.addEventListener("change", async () => {
+  const newType = noteTypeSelect.value;
+  const page = pages.find((p) => p.id === currentPageId);
+  if (!page) return;
+
+  if (editorInput.value.trim() === "") {
+    page.note_type = newType;
+    pageEl.setAttribute("data-note-type", newType);
+    scheduleSave();
+    return;
+  }
+
+  await flushSave();
+
+  const nextPosition = pages.length ? Math.max(...pages.map((p) => p.position)) + 1 : 0;
+  const { data: newPage, error } = await supabaseClient
+    .from("pages")
+    .insert({
+      entry_id: currentEntryId,
+      note_type: newType,
+      theme: page.theme,
+      content: "",
+      position: nextPosition,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error(error);
+    noteTypeSelect.value = page.note_type; // revert dropdown on failure
+    return;
+  }
+
+  pages.push(newPage);
+  currentPageId = newPage.id;
+  loadPageIntoEditor(currentPageId);
+  renderPageTabs();
 });
 
+// Theme always overwrites the current page's theme in place, regardless of content.
 themeSelect.addEventListener("change", () => {
+  const page = pages.find((p) => p.id === currentPageId);
+  if (!page) return;
+  page.theme = themeSelect.value;
   pageEl.setAttribute("data-theme", themeSelect.value);
   scheduleSave();
 });
