@@ -1,6 +1,6 @@
 // ---------- Configure these with your own Supabase project values ----------
-const SUPABASE_URL = "https://pvsjtxysphjcvrpnuops.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_268WI6TaUndTf52fd_tdNg_MhF27h9j";
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 // -----------------------------------------------------------------------
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -25,6 +25,8 @@ const pageEl = document.getElementById("page");
 const emptyState = document.getElementById("empty-state");
 const saveStatus = document.getElementById("save-status");
 const deleteEntryBtn = document.getElementById("delete-entry-btn");
+const noteTypeSelect = document.getElementById("note-type-select");
+const themeSelect = document.getElementById("theme-select");
 
 // ---------- State ----------
 let folders = [];
@@ -196,7 +198,13 @@ newFolderBtn.addEventListener("click", async () => {
 newFileBtn.addEventListener("click", async () => {
   const { data, error } = await supabaseClient
     .from("entries")
-    .insert({ title: "Untitled entry", content: "", folder_id: currentParentFolderId() })
+    .insert({
+      title: "Untitled entry",
+      content: "",
+      folder_id: currentParentFolderId(),
+      note_type: "plain",
+      theme: "classic",
+    })
     .select()
     .single();
   if (error) return console.error(error);
@@ -245,8 +253,16 @@ function openEntry(id) {
   currentEntryId = id;
   titleInput.value = entry.title || "";
   editorInput.value = entry.content || "";
+  applyAppearance(entry.note_type || "plain", entry.theme || "classic");
   showEditor();
   renderTree();
+}
+
+function applyAppearance(noteType, theme) {
+  pageEl.setAttribute("data-note-type", noteType);
+  pageEl.setAttribute("data-theme", theme);
+  noteTypeSelect.value = noteType;
+  themeSelect.value = theme;
 }
 
 function showEditor() {
@@ -269,7 +285,12 @@ async function saveCurrentEntry() {
   if (!currentEntryId) return;
   const { error } = await supabaseClient
     .from("entries")
-    .update({ title: titleInput.value || "Untitled entry", content: editorInput.value })
+    .update({
+      title: titleInput.value || "Untitled entry",
+      content: editorInput.value,
+      note_type: noteTypeSelect.value,
+      theme: themeSelect.value,
+    })
     .eq("id", currentEntryId);
 
   if (error) {
@@ -282,6 +303,8 @@ async function saveCurrentEntry() {
   if (entry) {
     entry.title = titleInput.value || "Untitled entry";
     entry.content = editorInput.value;
+    entry.note_type = noteTypeSelect.value;
+    entry.theme = themeSelect.value;
   }
   saveStatus.textContent = "Saved";
   renderTree();
@@ -289,6 +312,16 @@ async function saveCurrentEntry() {
 
 titleInput.addEventListener("input", scheduleSave);
 editorInput.addEventListener("input", scheduleSave);
+
+noteTypeSelect.addEventListener("change", () => {
+  pageEl.setAttribute("data-note-type", noteTypeSelect.value);
+  scheduleSave();
+});
+
+themeSelect.addEventListener("change", () => {
+  pageEl.setAttribute("data-theme", themeSelect.value);
+  scheduleSave();
+});
 
 // ---------- Toolbar formatting ----------
 document.querySelectorAll(".tb-btn[data-action]").forEach((btn) => {
@@ -319,5 +352,6 @@ function wrapSelection(before, after) {
 }
 
 // ---------- Boot ----------
+applyAppearance("plain", "classic");
 showEmptyState();
 init();
