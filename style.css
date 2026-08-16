@@ -286,6 +286,50 @@ html, body {
   justify-content: center;
 }
 
+.page-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.page-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.page-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 11px;
+  background: rgba(255,255,255,0.05);
+  color: var(--cream-muted);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+
+.page-tab:hover { background: rgba(255,255,255,0.1); color: var(--cream-text); }
+
+.page-tab.active {
+  background: rgba(181,101,47,0.3);
+  color: var(--cream-text);
+  border-color: rgba(181,101,47,0.5);
+}
+
+.page-tab .tab-close {
+  opacity: 0.6;
+  font-size: 10px;
+}
+
+.page-tab .tab-close:hover { opacity: 1; color: var(--danger); }
+
 /* ---------- Page: scoped variables, overridden per theme + note type ---------- */
 .page {
   /* defaults = Classic theme */
@@ -438,5 +482,4 @@ html, body {
 @media (max-width: 640px) {
   .sidebar { width: 200px; }
   .page { padding: 2rem 1.5rem; }
-}
 }
