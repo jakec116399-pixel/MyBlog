@@ -342,10 +342,6 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 100%;
-  max-width: 680px;
-  /* prevents drags/selection on the paper itself from being hijacked by browser image-drag etc */
-  user-select: text;
 }
 
 .zoom-controls {
@@ -440,19 +436,15 @@ html, body {
   --page-shadow: rgba(36, 33, 28, 0.18);
   --page-font: 'Courier Prime', 'Courier New', monospace;
   --page-line-height: 1.9;
-  --page-ruled: transparent;
 
+  display: flex;
+  flex-direction: column;
   background: var(--page-paper);
   color: var(--page-ink);
-  width: 100%;
-  max-width: 680px;
-  min-height: 100%;
-  padding: 3.5rem 3.5rem 4rem;
   box-shadow: 0 10px 40px var(--page-shadow), 0 2px 8px rgba(0,0,0,0.15);
   border-radius: 1px;
   transition: background 0.15s ease, color 0.15s ease;
-  background-image: var(--page-texture, none);
-  background-size: var(--page-texture-size, auto);
+  overflow: hidden; /* pagination handles overflow — the page itself never scrolls */
 }
 
 /* ----- Themes: paper + ink color only ----- */
@@ -488,43 +480,49 @@ html, body {
   --page-title-border: #c3d6bf;
 }
 
-/* ----- Note types: font, page shape, texture ----- */
+/* ----- Note types: real, fixed physical dimensions + font ----- */
 .page[data-note-type="plain"] {
   --page-font: 'Courier Prime', 'Courier New', monospace;
-  max-width: 680px;
+  width: 640px;
+  height: 828px;
+  padding: 48px;
 }
 
 .page[data-note-type="scriptwriter"] {
   --page-font: 'Courier Prime', 'Courier New', monospace;
-  max-width: 560px;
-  padding-left: 4.5rem;
-  padding-right: 4.5rem;
+  width: 480px;
+  height: 828px;
+  padding: 48px 64px;
 }
 
 .page[data-note-type="author"] {
   --page-font: 'Lora', Georgia, serif;
   --page-line-height: 1.75;
-  max-width: 680px;
+  width: 640px;
+  height: 828px;
+  padding: 48px;
 }
 
 .page[data-note-type="diary"] {
   --page-font: 'Kalam', cursive;
   --page-line-height: 2.1;
-  max-width: 600px;
+  width: 520px;
+  height: 650px;
+  padding: 44px;
 }
 
 .page[data-note-type="postit"] {
   --page-font: 'Patrick Hand', cursive;
   --page-line-height: 1.6;
-  max-width: 320px;
-  min-height: 320px;
-  padding: 2rem 2rem 2.5rem;
-  align-self: flex-start;
+  width: 300px;
+  height: 300px;
+  padding: 28px;
   box-shadow: 4px 6px 16px var(--page-shadow);
   transform: rotate(-0.6deg);
 }
 
 .entry-title {
+  flex-shrink: 0;
   display: block;
   width: 100%;
   border: none;
@@ -538,6 +536,10 @@ html, body {
   border-bottom: 1px dashed var(--page-title-border);
 }
 
+.entry-title.title-hidden {
+  display: none;
+}
+
 .page[data-note-type="postit"] .entry-title {
   font-size: 18px;
   margin-bottom: 10px;
@@ -547,9 +549,10 @@ html, body {
 .entry-title:focus { outline: none; }
 
 .entry-editor {
+  flex: 1;
+  min-height: 0; /* required so a flex child can actually shrink to fit */
   display: block;
   width: 100%;
-  min-height: 60vh;
   border: none;
   resize: none;
   background: transparent;
@@ -557,10 +560,10 @@ html, body {
   font-size: 15px;
   line-height: var(--page-line-height);
   color: var(--page-ink);
+  overflow: hidden;
 }
 
 .page[data-note-type="postit"] .entry-editor {
-  min-height: 200px;
   font-size: 14px;
 }
 
