@@ -14,6 +14,7 @@ const loginError = document.getElementById("login-error");
 const loginBtn = document.getElementById("login-btn");
 
 const appEl = document.getElementById("app");
+const journalNameInput = document.getElementById("journal-name");
 const treeEl = document.getElementById("tree");
 const newFolderBtn = document.getElementById("new-folder-btn");
 const newFileBtn = document.getElementById("new-file-btn");
@@ -21,6 +22,8 @@ const logoutBtn = document.getElementById("logout-btn");
 
 const titleInput = document.getElementById("entry-title");
 const editorInput = document.getElementById("entry-editor");
+const pageWrapEl = document.getElementById("page-wrap");
+const canvasEl = document.getElementById("canvas");
 const pageEl = document.getElementById("page");
 const pageTabsEl = document.getElementById("page-tabs");
 const emptyState = document.getElementById("empty-state");
@@ -28,6 +31,10 @@ const saveStatus = document.getElementById("save-status");
 const deleteEntryBtn = document.getElementById("delete-entry-btn");
 const noteTypeSelect = document.getElementById("note-type-select");
 const themeSelect = document.getElementById("theme-select");
+const zoomInBtn = document.getElementById("zoom-in-btn");
+const zoomOutBtn = document.getElementById("zoom-out-btn");
+const zoomResetBtn = document.getElementById("zoom-reset-btn");
+const zoomLevelEl = document.getElementById("zoom-level");
 
 const NOTE_TYPE_LABELS = {
   plain: "Plain",
@@ -45,13 +52,16 @@ let currentEntryId = null;
 let pages = [];                 // pages belonging to the currently open entry
 let currentPageId = null;
 let saveTimer = null;
+let journalNameSaveTimer = null;
 
 // ---------- Auth ----------
 async function init() {
   const { data } = await supabaseClient.auth.getSession();
   if (data.session) {
     showApp();
-    loadData();
+    await loadData();
+    await loadJournalName();
+    await openStartingEntry();
   } else {
     showLogin();
   }
@@ -87,7 +97,9 @@ loginForm.addEventListener("submit", async (e) => {
   }
 
   showApp();
-  loadData();
+  await loadData();
+  await loadJournalName();
+  await openStartingEntry();
 });
 
 logoutBtn.addEventListener("click", async () => {
@@ -96,6 +108,51 @@ logoutBtn.addEventListener("click", async () => {
   currentPageId = null;
   showLogin();
 });
+
+// ---------- Journal name (top right, editable) ----------
+async function loadJournalName() {
+  const { data, error } = await supabaseClient.from("settings").select("journal_name").maybeSingle();
+
+  if (error) {
+    console.error(error);
+    journalNameInput.value = "My notes";
+    return;
+  }
+
+  if (!data) {
+    // First time: create a settings row for this user.
+    const { data: created, error: createErr } = await supabaseClient
+      .from("settings")
+      .insert({ journal_name: "My notes" })
+      .select("journal_name")
+      .single();
+    if (createErr) {
+      console.error(createErr);
+      journalNameInput.value = "My notes";
+      return;
+    }
+    journalNameInput.value = created.journal_name;
+    return;
+  }
+
+  journalNameInput.value = data.journal_name;
+}
+
+journalNameInput.addEventListener("input", () => {
+  clearTimeout(journalNameSaveTimer);
+  journalNameSaveTimer = setTimeout(saveJournalName, 500);
+});
+
+journalNameInput.addEventListener("blur", () => {
+  clearTimeout(journalNameSaveTimer);
+  saveJournalName();
+});
+
+async function saveJournalName() {
+  const name = journalNameInput.value.trim() || "My notes";
+  const { error } = await supabaseClient.from("settings").update({ journal_name: name }).select();
+  if (error) console.error(error);
+}
 
 // ---------- Data loading ----------
 async function loadData() {
@@ -113,7 +170,32 @@ async function loadData() {
   folders = folderData;
   entries = entryData;
   renderTree();
-  showEmptyState();
+}
+
+// On login/load, get straight into a blank writable page with no clicking required.
+// Reuses an existing empty, untitled entry if one is sitting around from last time,
+// rather than piling up a fresh blank entry on every visit.
+async function openStartingEntry() {
+  const untitledCandidates = entries.filter((e) => !e.title);
+
+  for (const candidate of untitledCandidates) {
+    const { data: candidatePages, error } = await supabaseClient
+      .from("pages")
+      .select("*")
+      .eq("entry_id", candidate.id)
+      .order("position");
+    if (error) {
+      console.error(error);
+      continue;
+    }
+    const isEmpty = candidatePages.every((p) => !p.content || !p.content.trim());
+    if (isEmpty && candidatePages.length) {
+      await openEntry(candidate.id, candidatePages);
+      return;
+    }
+  }
+
+  await createAndOpenNewEntry();
 }
 
 // ---------- Tree rendering ----------
@@ -163,9 +245,12 @@ function renderEntryList(entryList, container, depth) {
     const row = document.createElement("div");
     row.className = "tree-row" + (entry.id === currentEntryId ? " selected" : "");
     row.style.paddingLeft = `${depth * 14 + 20}px`;
+    const label = entry.title
+      ? escapeHtml(entry.title)
+      : '<span class="row-label-empty">(untitled)</span>';
     row.innerHTML = `
       <span class="row-icon">▤</span>
-      <span class="row-label">${escapeHtml(entry.title || "Untitled entry")}</span>
+      <span class="row-label">${label}</span>
       <span class="row-delete" title="Delete entry">✕</span>
     `;
     row.querySelector(".row-label").addEventListener("click", () => openEntry(entry.id));
@@ -207,10 +292,12 @@ newFolderBtn.addEventListener("click", async () => {
   renderTree();
 });
 
-newFileBtn.addEventListener("click", async () => {
+newFileBtn.addEventListener("click", createAndOpenNewEntry);
+
+async function createAndOpenNewEntry() {
   const { data: entryData, error: entryErr } = await supabaseClient
     .from("entries")
-    .insert({ title: "Untitled entry", folder_id: currentParentFolderId() })
+    .insert({ title: "", folder_id: currentParentFolderId() })
     .select("id, title, folder_id, created_at")
     .single();
   if (entryErr) return console.error(entryErr);
@@ -226,7 +313,7 @@ newFileBtn.addEventListener("click", async () => {
   if (entryData.folder_id) openFolderIds.add(entryData.folder_id);
   renderTree();
   await openEntry(entryData.id, [pageData]);
-});
+}
 
 // New items are added at the root for simplicity; open the folder you want
 // items filed into if you'd rather nest them, then use the tree row menu (future enhancement).
@@ -253,7 +340,8 @@ async function deleteEntry(id) {
     currentEntryId = null;
     currentPageId = null;
     pages = [];
-    showEmptyState();
+    await openStartingEntry();
+    return;
   }
   renderTree();
 }
@@ -292,6 +380,7 @@ async function openEntry(id, preloadedPages) {
   loadPageIntoEditor(currentPageId);
   showEditor();
   renderTree();
+  editorInput.focus();
 }
 
 function loadPageIntoEditor(pageId) {
@@ -384,7 +473,7 @@ async function flushSave() {
 async function saveCurrent() {
   if (!currentEntryId || !currentPageId) return;
 
-  const newTitle = titleInput.value || "Untitled entry";
+  const newTitle = titleInput.value; // no forced fallback text — empty stays empty
   const page = pages.find((p) => p.id === currentPageId);
 
   const [{ error: entryErr }, { error: pageErr }] = await Promise.all([
@@ -491,7 +580,88 @@ function wrapSelection(before, after) {
   scheduleSave();
 }
 
+// ---------- Free-form pan & zoom of the paper ----------
+let panX = 0;
+let panY = 0;
+let zoom = 1;
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 3;
+
+function applyTransform() {
+  canvasEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  zoomLevelEl.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function resetView() {
+  panX = 0;
+  panY = 0;
+  zoom = 1;
+  applyTransform();
+}
+
+function zoomBy(factor, centerX, centerY) {
+  const rect = pageWrapEl.getBoundingClientRect();
+  const cx = centerX !== undefined ? centerX - rect.left : rect.width / 2;
+  const cy = centerY !== undefined ? centerY - rect.top : rect.height / 2;
+
+  const pointX = (cx - panX) / zoom;
+  const pointY = (cy - panY) / zoom;
+
+  const newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * factor));
+
+  panX = cx - pointX * newZoom;
+  panY = cy - pointY * newZoom;
+  zoom = newZoom;
+  applyTransform();
+}
+
+zoomInBtn.addEventListener("click", () => zoomBy(1.2));
+zoomOutBtn.addEventListener("click", () => zoomBy(1 / 1.2));
+zoomResetBtn.addEventListener("click", resetView);
+
+pageWrapEl.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+    zoomBy(factor, e.clientX, e.clientY);
+  },
+  { passive: false }
+);
+
+// Dragging the paper (or the desk around it) pans the view. Dragging inside
+// the title field or the text itself still just places the cursor, as normal.
+let isPanning = false;
+let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
+
+function isInteractiveTarget(target) {
+  return (
+    target.closest("input, textarea, button, select, .page-tab") !== null
+  );
+}
+
+pageWrapEl.addEventListener("mousedown", (e) => {
+  if (isInteractiveTarget(e.target)) return;
+  isPanning = true;
+  pageWrapEl.classList.add("panning");
+  panStart = { x: e.clientX, y: e.clientY, panX, panY };
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!isPanning) return;
+  panX = panStart.panX + (e.clientX - panStart.x);
+  panY = panStart.panY + (e.clientY - panStart.y);
+  applyTransform();
+});
+
+window.addEventListener("mouseup", () => {
+  if (!isPanning) return;
+  isPanning = false;
+  pageWrapEl.classList.remove("panning");
+});
+
 // ---------- Boot ----------
 applyAppearance("plain", "classic");
+applyTransform();
 showEmptyState();
 init();
