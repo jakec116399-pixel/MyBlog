@@ -44,15 +44,31 @@ const NOTE_TYPE_LABELS = {
   postit: "Post-it",
 };
 
+// Hidden element used purely to measure how much text fits in a page's
+// text area, by mirroring the editor's exact font/wrapping and binary
+// searching for the longest prefix that still fits within a height budget.
+const measureMirror = document.createElement("div");
+measureMirror.style.position = "absolute";
+measureMirror.style.visibility = "hidden";
+measureMirror.style.top = "-9999px";
+measureMirror.style.left = "-9999px";
+measureMirror.style.whiteSpace = "pre-wrap";
+measureMirror.style.wordWrap = "break-word";
+measureMirror.style.overflowWrap = "break-word";
+document.body.appendChild(measureMirror);
+
 // ---------- State ----------
 let folders = [];
 let entries = [];               // lightweight: id, title, folder_id
 let openFolderIds = new Set();
 let currentEntryId = null;
-let pages = [];                 // pages belonging to the currently open entry
+let pages = [];                 // all pages belonging to the currently open entry, ordered by position
 let currentPageId = null;
 let saveTimer = null;
 let journalNameSaveTimer = null;
+let dirtyPageIds = new Set();   // pages whose content/type/theme/position changed locally, pending save
+let titleDirty = false;
+let suppressReflow = false;     // true while programmatically setting editorInput.value
 
 // ---------- Auth ----------
 async function init() {
@@ -120,7 +136,6 @@ async function loadJournalName() {
   }
 
   if (!data) {
-    // First time: create a settings row for this user.
     const { data: created, error: createErr } = await supabaseClient
       .from("settings")
       .insert({ journal_name: "My notes" })
@@ -172,9 +187,6 @@ async function loadData() {
   renderTree();
 }
 
-// On login/load, get straight into a blank writable page with no clicking required.
-// Reuses an existing empty, untitled entry if one is sitting around from last time,
-// rather than piling up a fresh blank entry on every visit.
 async function openStartingEntry() {
   const untitledCandidates = entries.filter((e) => !e.title);
 
@@ -219,12 +231,8 @@ function renderFolderList(folderList, container, depth) {
       <span class="row-label">${escapeHtml(folder.name)}</span>
       <span class="row-delete" title="Delete folder">✕</span>
     `;
-    row.querySelector(".row-label").addEventListener("click", () => {
-      toggleFolder(folder.id);
-    });
-    row.querySelector(".chevron").addEventListener("click", () => {
-      toggleFolder(folder.id);
-    });
+    row.querySelector(".row-label").addEventListener("click", () => toggleFolder(folder.id));
+    row.querySelector(".chevron").addEventListener("click", () => toggleFolder(folder.id));
     row.querySelector(".row-delete").addEventListener("click", (e) => {
       e.stopPropagation();
       deleteFolder(folder.id);
@@ -263,11 +271,8 @@ function renderEntryList(entryList, container, depth) {
 }
 
 function toggleFolder(id) {
-  if (openFolderIds.has(id)) {
-    openFolderIds.delete(id);
-  } else {
-    openFolderIds.add(id);
-  }
+  if (openFolderIds.has(id)) openFolderIds.delete(id);
+  else openFolderIds.add(id);
   renderTree();
 }
 
@@ -315,8 +320,6 @@ async function createAndOpenNewEntry() {
   await openEntry(entryData.id, [pageData]);
 }
 
-// New items are added at the root for simplicity; open the folder you want
-// items filed into if you'd rather nest them, then use the tree row menu (future enhancement).
 function currentParentFolderId() {
   return null;
 }
@@ -383,11 +386,18 @@ async function openEntry(id, preloadedPages) {
   editorInput.focus();
 }
 
+function isEntryFirstPage(pageId) {
+  return pages.length > 0 && pages[0].id === pageId;
+}
+
 function loadPageIntoEditor(pageId) {
   const page = pages.find((p) => p.id === pageId);
   if (!page) return;
+  suppressReflow = true;
   editorInput.value = page.content || "";
+  suppressReflow = false;
   applyAppearance(page.note_type || "plain", page.theme || "classic");
+  titleInput.classList.toggle("title-hidden", !isEntryFirstPage(pageId));
 }
 
 function applyAppearance(noteType, theme) {
@@ -400,13 +410,22 @@ function applyAppearance(noteType, theme) {
 // ---------- Page tabs ----------
 function renderPageTabs() {
   pageTabsEl.innerHTML = "";
-  if (pages.length <= 1) return; // no need to show tabs for a single page
+  if (pages.length <= 1) return;
 
-  pages.forEach((page) => {
+  // Number consecutive pages that share a note type, e.g. "Plain 1", "Plain 2"
+  const labels = pages.map((p, i) => {
+    const sameTypeRunLength = pages.filter((q) => q.note_type === p.note_type).length;
+    if (sameTypeRunLength <= 1) return NOTE_TYPE_LABELS[p.note_type] || p.note_type;
+    const indexWithinType =
+      pages.slice(0, i + 1).filter((q) => q.note_type === p.note_type).length;
+    return `${NOTE_TYPE_LABELS[p.note_type] || p.note_type} ${indexWithinType}`;
+  });
+
+  pages.forEach((page, i) => {
     const tab = document.createElement("div");
     tab.className = "page-tab" + (page.id === currentPageId ? " active" : "");
     tab.innerHTML = `
-      <span>${NOTE_TYPE_LABELS[page.note_type] || page.note_type}</span>
+      <span>${labels[i]}</span>
       <span class="tab-close" title="Delete this page">✕</span>
     `;
     tab.querySelector("span").addEventListener("click", () => switchToPage(page.id));
@@ -436,6 +455,7 @@ async function deletePage(pageId) {
   if (error) return console.error(error);
 
   pages = pages.filter((p) => p.id !== pageId);
+  renumberPositions();
   if (currentPageId === pageId) {
     currentPageId = pages[0].id;
     loadPageIntoEditor(currentPageId);
@@ -459,10 +479,9 @@ function showEmptyState() {
 function scheduleSave() {
   saveStatus.textContent = "Saving...";
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveCurrent, 600);
+  saveTimer = setTimeout(saveCurrent, 500);
 }
 
-// Immediately persist any pending edit, e.g. before switching pages/entries.
 async function flushSave() {
   if (!saveTimer) return;
   clearTimeout(saveTimer);
@@ -471,39 +490,335 @@ async function flushSave() {
 }
 
 async function saveCurrent() {
-  if (!currentEntryId || !currentPageId) return;
+  if (!currentEntryId) return;
 
-  const newTitle = titleInput.value; // no forced fallback text — empty stays empty
-  const page = pages.find((p) => p.id === currentPageId);
+  const jobs = [];
 
-  const [{ error: entryErr }, { error: pageErr }] = await Promise.all([
-    supabaseClient.from("entries").update({ title: newTitle }).eq("id", currentEntryId),
-    supabaseClient
-      .from("pages")
-      .update({ content: editorInput.value, note_type: page.note_type, theme: page.theme })
-      .eq("id", currentPageId),
-  ]);
-
-  if (entryErr || pageErr) {
-    saveStatus.textContent = "Could not save";
-    console.error(entryErr || pageErr);
-    return;
+  if (titleDirty) {
+    jobs.push(
+      supabaseClient.from("entries").update({ title: titleInput.value }).eq("id", currentEntryId)
+    );
+    const entry = entries.find((e) => e.id === currentEntryId);
+    if (entry) entry.title = titleInput.value;
+    titleDirty = false;
   }
 
-  const entry = entries.find((e) => e.id === currentEntryId);
-  if (entry) entry.title = newTitle;
-  page.content = editorInput.value;
+  for (const pageId of dirtyPageIds) {
+    const page = pages.find((p) => p.id === pageId);
+    if (!page) continue;
+    jobs.push(
+      supabaseClient
+        .from("pages")
+        .update({
+          content: page.content,
+          note_type: page.note_type,
+          theme: page.theme,
+          position: page.position,
+        })
+        .eq("id", page.id)
+    );
+  }
+  dirtyPageIds.clear();
+
+  if (jobs.length === 0) return;
+
+  const results = await Promise.all(jobs);
+  const failed = results.find((r) => r.error);
+  if (failed) {
+    saveStatus.textContent = "Could not save";
+    console.error(failed.error);
+    return;
+  }
 
   saveStatus.textContent = "Saved";
   renderTree();
 }
 
-titleInput.addEventListener("input", scheduleSave);
-editorInput.addEventListener("input", scheduleSave);
+titleInput.addEventListener("input", () => {
+  titleDirty = true;
+  scheduleSave();
+});
+
+// ---------- Pagination engine ----------
+// The whole idea: a run of pages sharing the same note type is one continuous
+// document under the hood. On every keystroke we rebuild that full text,
+// re-split it to fit the fixed page size, and figure out which resulting
+// page the cursor now falls on — creating or removing linked pages as needed.
+
+function getChainIndices(pageId) {
+  const idx = pages.findIndex((p) => p.id === pageId);
+  if (idx === -1) return [idx, idx];
+  const type = pages[idx].note_type;
+  let start = idx;
+  while (start > 0 && pages[start - 1].note_type === type) start--;
+  let end = idx;
+  while (end < pages.length - 1 && pages[end + 1].note_type === type) end++;
+  return [start, end];
+}
+
+function measureFitLength(text, maxHeight, widthPx) {
+  const style = getComputedStyle(editorInput);
+  measureMirror.style.width = widthPx + "px";
+  measureMirror.style.fontFamily = style.fontFamily;
+  measureMirror.style.fontSize = style.fontSize;
+  measureMirror.style.lineHeight = style.lineHeight;
+  measureMirror.style.letterSpacing = style.letterSpacing;
+
+  if (text.length === 0) return 0;
+
+  let lo = 0;
+  let hi = text.length;
+  let best = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    measureMirror.textContent = text.slice(0, mid);
+    const h = measureMirror.scrollHeight;
+    if (h <= maxHeight) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
+}
+
+function availableHeightFor(page, forFirstEntryPage) {
+  // Uses the live page element's own box, so it always matches current CSS.
+  const style = getComputedStyle(pageEl);
+  const padTop = parseFloat(style.paddingTop);
+  const padBottom = parseFloat(style.paddingBottom);
+  let interior = pageEl.clientHeight - padTop - padBottom;
+  if (forFirstEntryPage) {
+    const titleStyle = getComputedStyle(titleInput);
+    interior -= titleInput.offsetHeight + parseFloat(titleStyle.marginBottom || 0);
+  }
+  return Math.max(interior, 40);
+}
+
+function renumberPositions() {
+  pages.forEach((p, i) => {
+    if (p.position !== i) {
+      p.position = i;
+      dirtyPageIds.add(p.id);
+    }
+  });
+}
+
+// Rebuilds a chain of same-typed pages from `fullText`, splitting it across
+// as many pages as needed, creating/removing pages to match, and returning
+// which page + local offset a given absolute caret offset lands on.
+function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
+  const templatePage = pages[chainStart];
+  const width = editorInput.clientWidth;
+
+  const chunks = [];
+  let remaining = fullText;
+  let firstChunk = true;
+
+  while (true) {
+    const forFirst = firstChunk && chainStart === 0;
+    const maxHeight = availableHeightFor(templatePage, forFirst);
+    const fitLen = measureFitLength(remaining, maxHeight, width);
+
+    if (remaining.length === 0) {
+      chunks.push("");
+      break;
+    }
+    if (fitLen >= remaining.length) {
+      chunks.push(remaining);
+      break;
+    }
+    // Avoid splitting mid-word where a nearby space allows a cleaner break.
+    let breakAt = fitLen;
+    const lookback = remaining.lastIndexOf(" ", fitLen);
+    if (lookback > fitLen - 20 && lookback > 0) breakAt = lookback + 1;
+    if (breakAt <= 0) breakAt = Math.max(fitLen, 1);
+
+    chunks.push(remaining.slice(0, breakAt));
+    remaining = remaining.slice(breakAt);
+    firstChunk = false;
+  }
+
+  const existingChainPages = pages.slice(chainStart, chainEnd + 1);
+  const resultPages = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (i < existingChainPages.length) {
+      const page = existingChainPages[i];
+      if (page.content !== chunks[i]) {
+        page.content = chunks[i];
+        dirtyPageIds.add(page.id);
+      }
+      resultPages.push(page);
+    } else {
+      const newPage = {
+        id: "temp-" + Math.random().toString(36).slice(2),
+        entry_id: currentEntryId,
+        note_type: templatePage.note_type,
+        theme: templatePage.theme,
+        content: chunks[i],
+        position: 0, // fixed up by renumberPositions()
+      };
+      resultPages.push(newPage);
+      dirtyPageIds.add(newPage.id);
+      persistNewPage(newPage);
+    }
+  }
+
+  // Drop chain pages beyond what's now needed.
+  for (let i = chunks.length; i < existingChainPages.length; i++) {
+    const stale = existingChainPages[i];
+    dirtyPageIds.delete(stale.id);
+    if (!String(stale.id).startsWith("temp-")) {
+      supabaseClient.from("pages").delete().eq("id", stale.id).then(({ error }) => {
+        if (error) console.error(error);
+      });
+    }
+  }
+
+  pages.splice(chainStart, existingChainPages.length, ...resultPages);
+  renumberPositions();
+
+  // Locate which resulting page holds the caret.
+  let cumulative = 0;
+  let targetPage = resultPages[resultPages.length - 1];
+  let localOffset = chunks[chunks.length - 1].length;
+  for (let i = 0; i < resultPages.length; i++) {
+    const len = chunks[i].length;
+    if (caretAbsOffset <= cumulative + len) {
+      targetPage = resultPages[i];
+      localOffset = caretAbsOffset - cumulative;
+      break;
+    }
+    cumulative += len;
+  }
+
+  return { targetPageId: targetPage.id, localOffset };
+}
+
+// New pages created mid-reflow get a real id from Supabase in the background;
+// we swap the temp id for the real one once it comes back so future saves work.
+function persistNewPage(newPage) {
+  supabaseClient
+    .from("pages")
+    .insert({
+      entry_id: newPage.entry_id,
+      note_type: newPage.note_type,
+      theme: newPage.theme,
+      content: newPage.content,
+      position: newPage.position,
+    })
+    .select()
+    .single()
+    .then(({ data, error }) => {
+      if (error) {
+        console.error(error);
+        return;
+      }
+      const stillDirty = dirtyPageIds.has(newPage.id);
+      const idx = pages.findIndex((p) => p.id === newPage.id);
+      if (idx !== -1) {
+        pages[idx] = { ...pages[idx], id: data.id };
+        if (currentPageId === newPage.id) currentPageId = data.id;
+        dirtyPageIds.delete(newPage.id);
+        if (stillDirty) dirtyPageIds.add(data.id);
+        renderPageTabs();
+      }
+    });
+}
+
+function runReflowFromEditor() {
+  if (!currentPageId) return;
+
+  const [chainStart, chainEnd] = getChainIndices(currentPageId);
+  const currentIdxInChain = pages.findIndex((p) => p.id === currentPageId) - chainStart;
+
+  const before = pages.slice(chainStart, chainStart + currentIdxInChain).map((p) => p.content).join("");
+  const after = pages.slice(chainStart + currentIdxInChain + 1, chainEnd + 1).map((p) => p.content).join("");
+  const fullText = before + editorInput.value + after;
+  const caretAbsOffset = before.length + editorInput.selectionStart;
+
+  const { targetPageId, localOffset } = reflowChain(chainStart, chainEnd, fullText, caretAbsOffset);
+
+  currentPageId = targetPageId;
+  const targetPage = pages.find((p) => p.id === targetPageId);
+
+  suppressReflow = true;
+  editorInput.value = targetPage.content;
+  suppressReflow = false;
+  editorInput.selectionStart = localOffset;
+  editorInput.selectionEnd = localOffset;
+  titleInput.classList.toggle("title-hidden", !isEntryFirstPage(currentPageId));
+
+  renderPageTabs();
+  scheduleSave();
+}
+
+editorInput.addEventListener("input", () => {
+  if (suppressReflow) return;
+  runReflowFromEditor();
+});
+
+// Backspace at the very start of a page reaches back into the previous page
+// in the chain; Delete at the very end reaches forward into the next one.
+// Both feel like flipping back/forward through continuous paper.
+editorInput.addEventListener("keydown", (e) => {
+  const atStart = editorInput.selectionStart === 0 && editorInput.selectionEnd === 0;
+  const atEnd =
+    editorInput.selectionStart === editorInput.value.length &&
+    editorInput.selectionEnd === editorInput.value.length;
+
+  if (e.key === "Backspace" && atStart) {
+    const [chainStart] = getChainIndices(currentPageId);
+    const idx = pages.findIndex((p) => p.id === currentPageId);
+    if (idx > chainStart) {
+      e.preventDefault();
+      mergeAcrossBoundary(-1);
+    }
+  } else if (e.key === "Delete" && atEnd) {
+    const [, chainEnd] = getChainIndices(currentPageId);
+    const idx = pages.findIndex((p) => p.id === currentPageId);
+    if (idx < chainEnd) {
+      e.preventDefault();
+      mergeAcrossBoundary(1);
+    }
+  }
+});
+
+function mergeAcrossBoundary(direction) {
+  const [chainStart, chainEnd] = getChainIndices(currentPageId);
+  const currentIdxInChain = pages.findIndex((p) => p.id === currentPageId) - chainStart;
+
+  const before = pages.slice(chainStart, chainStart + currentIdxInChain).map((p) => p.content).join("");
+  const after = pages.slice(chainStart + currentIdxInChain + 1, chainEnd + 1).map((p) => p.content).join("");
+  const fullText = before + editorInput.value + after;
+  let caretAbsOffset = before.length + editorInput.selectionStart;
+
+  const newFullText =
+    direction === -1
+      ? fullText.slice(0, caretAbsOffset - 1) + fullText.slice(caretAbsOffset)
+      : fullText.slice(0, caretAbsOffset) + fullText.slice(caretAbsOffset + 1);
+  if (direction === -1) caretAbsOffset -= 1;
+
+  const { targetPageId, localOffset } = reflowChain(chainStart, chainEnd, newFullText, caretAbsOffset);
+
+  currentPageId = targetPageId;
+  const targetPage = pages.find((p) => p.id === targetPageId);
+
+  suppressReflow = true;
+  editorInput.value = targetPage.content;
+  suppressReflow = false;
+  editorInput.selectionStart = localOffset;
+  editorInput.selectionEnd = localOffset;
+  titleInput.classList.toggle("title-hidden", !isEntryFirstPage(currentPageId));
+  editorInput.focus();
+
+  renderPageTabs();
+  scheduleSave();
+}
 
 // ---------- Note type dropdown ----------
-// Blank current page -> overwrite its type in place.
-// Page has content -> spin off a new page, switch to it, leave the original untouched.
 noteTypeSelect.addEventListener("change", async () => {
   const newType = noteTypeSelect.value;
   const page = pages.find((p) => p.id === currentPageId);
@@ -511,6 +826,7 @@ noteTypeSelect.addEventListener("change", async () => {
 
   if (editorInput.value.trim() === "") {
     page.note_type = newType;
+    dirtyPageIds.add(page.id);
     pageEl.setAttribute("data-note-type", newType);
     scheduleSave();
     return;
@@ -518,7 +834,6 @@ noteTypeSelect.addEventListener("change", async () => {
 
   await flushSave();
 
-  const nextPosition = pages.length ? Math.max(...pages.map((p) => p.position)) + 1 : 0;
   const { data: newPage, error } = await supabaseClient
     .from("pages")
     .insert({
@@ -526,28 +841,29 @@ noteTypeSelect.addEventListener("change", async () => {
       note_type: newType,
       theme: page.theme,
       content: "",
-      position: nextPosition,
+      position: pages.length,
     })
     .select()
     .single();
 
   if (error) {
     console.error(error);
-    noteTypeSelect.value = page.note_type; // revert dropdown on failure
+    noteTypeSelect.value = page.note_type;
     return;
   }
 
   pages.push(newPage);
+  renumberPositions();
   currentPageId = newPage.id;
   loadPageIntoEditor(currentPageId);
   renderPageTabs();
 });
 
-// Theme always overwrites the current page's theme in place, regardless of content.
 themeSelect.addEventListener("change", () => {
   const page = pages.find((p) => p.id === currentPageId);
   if (!page) return;
   page.theme = themeSelect.value;
+  dirtyPageIds.add(page.id);
   pageEl.setAttribute("data-theme", themeSelect.value);
   scheduleSave();
 });
@@ -574,10 +890,10 @@ function wrapSelection(before, after) {
   const val = editorInput.value;
   const selected = val.substring(start, end) || "text";
   editorInput.value = val.substring(0, start) + before + selected + after + val.substring(end);
-  editorInput.focus();
   editorInput.selectionStart = start + before.length;
   editorInput.selectionEnd = start + before.length + selected.length;
-  scheduleSave();
+  editorInput.focus();
+  runReflowFromEditor();
 }
 
 // ---------- Free-form pan & zoom of the paper ----------
@@ -629,15 +945,11 @@ pageWrapEl.addEventListener(
   { passive: false }
 );
 
-// Dragging the paper (or the desk around it) pans the view. Dragging inside
-// the title field or the text itself still just places the cursor, as normal.
 let isPanning = false;
 let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
 
 function isInteractiveTarget(target) {
-  return (
-    target.closest("input, textarea, button, select, .page-tab") !== null
-  );
+  return target.closest("input, textarea, button, select, .page-tab") !== null;
 }
 
 pageWrapEl.addEventListener("mousedown", (e) => {
