@@ -74,13 +74,15 @@
       </div>
 
       <div class="page-wrap" id="page-wrap">
-        <div class="canvas" id="canvas">
-          <div class="page-column">
-            <div class="page" id="page">
-              <input id="entry-title" class="entry-title" />
-              <textarea id="entry-editor" class="entry-editor" placeholder="Start writing..."></textarea>
+        <div class="zoom-outer" id="zoom-outer">
+          <div class="canvas" id="canvas">
+            <div class="page-column">
+              <div class="page" id="page">
+                <input id="entry-title" class="entry-title" />
+                <textarea id="entry-editor" class="entry-editor" placeholder="Start writing..."></textarea>
+              </div>
+              <div id="page-tabs" class="page-tabs"></div>
             </div>
-            <div id="page-tabs" class="page-tabs"></div>
           </div>
         </div>
         <p id="empty-state" class="empty-state hidden">Select an entry on the left, or create a new one.</p>
@@ -88,7 +90,7 @@
           <button id="zoom-out-btn" class="zoom-btn" title="Zoom out">−</button>
           <span id="zoom-level" class="zoom-level">100%</span>
           <button id="zoom-in-btn" class="zoom-btn" title="Zoom in">+</button>
-          <button id="zoom-reset-btn" class="zoom-btn zoom-reset" title="Reset view">Reset</button>
+          <button id="zoom-reset-btn" class="zoom-btn zoom-reset" title="Fit to width">Fit</button>
         </div>
       </div>
     </main>
@@ -99,4 +101,3 @@
 <script src="app.js"></script>
 </body>
 </html>
-
