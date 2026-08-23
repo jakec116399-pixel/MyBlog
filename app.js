@@ -23,6 +23,7 @@ const logoutBtn = document.getElementById("logout-btn");
 const titleInput = document.getElementById("entry-title");
 const editorInput = document.getElementById("entry-editor");
 const pageWrapEl = document.getElementById("page-wrap");
+const zoomOuterEl = document.getElementById("zoom-outer");
 const canvasEl = document.getElementById("canvas");
 const pageEl = document.getElementById("page");
 const pageTabsEl = document.getElementById("page-tabs");
@@ -382,6 +383,7 @@ async function openEntry(id, preloadedPages) {
   renderPageTabs();
   loadPageIntoEditor(currentPageId);
   showEditor();
+  fitToWidth();
   renderTree();
   editorInput.focus();
 }
@@ -403,6 +405,7 @@ function loadPageIntoEditor(pageId) {
 function applyAppearance(noteType, theme) {
   pageEl.setAttribute("data-note-type", noteType);
   pageEl.setAttribute("data-theme", theme);
+  pageWrapEl.setAttribute("data-theme", theme);
   noteTypeSelect.value = noteType;
   themeSelect.value = theme;
 }
@@ -443,6 +446,7 @@ async function switchToPage(pageId) {
   currentPageId = pageId;
   loadPageIntoEditor(pageId);
   renderPageTabs();
+  fitToWidth();
 }
 
 async function deletePage(pageId) {
@@ -828,6 +832,7 @@ noteTypeSelect.addEventListener("change", async () => {
     page.note_type = newType;
     dirtyPageIds.add(page.id);
     pageEl.setAttribute("data-note-type", newType);
+    fitToWidth();
     scheduleSave();
     return;
   }
@@ -857,6 +862,7 @@ noteTypeSelect.addEventListener("change", async () => {
   currentPageId = newPage.id;
   loadPageIntoEditor(currentPageId);
   renderPageTabs();
+  fitToWidth();
 });
 
 themeSelect.addEventListener("change", () => {
@@ -865,6 +871,7 @@ themeSelect.addEventListener("change", () => {
   page.theme = themeSelect.value;
   dirtyPageIds.add(page.id);
   pageEl.setAttribute("data-theme", themeSelect.value);
+  pageWrapEl.setAttribute("data-theme", themeSelect.value);
   scheduleSave();
 });
 
@@ -896,84 +903,61 @@ function wrapSelection(before, after) {
   runReflowFromEditor();
 }
 
-// ---------- Free-form pan & zoom of the paper ----------
-let panX = 0;
-let panY = 0;
+// ---------- Fit-to-width view, native scroll, zoom-to-shrink ----------
+// The page always starts scaled to fill the available width. Vertical
+// scrolling is the browser's normal scrollbar/wheel behavior. Zooming
+// (buttons, or Ctrl/Cmd + scroll) scales the page down from that baseline
+// rather than moving it around.
 let zoom = 1;
-const ZOOM_MIN = 0.3;
+let isManualZoom = false;
+const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 3;
+const VIEW_SIDE_INSET = 48; // breathing room so the page doesn't touch the viewport edges
 
-function applyTransform() {
-  canvasEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+function updateCanvasScale() {
+  const w = canvasEl.offsetWidth;   // unaffected by the current transform
+  const h = canvasEl.offsetHeight;
+  zoomOuterEl.style.width = w * zoom + "px";
+  zoomOuterEl.style.height = h * zoom + "px";
+  canvasEl.style.transform = `scale(${zoom})`;
   zoomLevelEl.textContent = `${Math.round(zoom * 100)}%`;
 }
 
-function resetView() {
-  panX = 0;
-  panY = 0;
-  zoom = 1;
-  applyTransform();
+function fitToWidth() {
+  const available = pageWrapEl.clientWidth - VIEW_SIDE_INSET;
+  const pageWidth = pageEl.offsetWidth;
+  if (pageWidth === 0) return; // page not visible yet (e.g. empty state)
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, available / pageWidth));
+  isManualZoom = false;
+  updateCanvasScale();
 }
 
-function zoomBy(factor, centerX, centerY) {
-  const rect = pageWrapEl.getBoundingClientRect();
-  const cx = centerX !== undefined ? centerX - rect.left : rect.width / 2;
-  const cy = centerY !== undefined ? centerY - rect.top : rect.height / 2;
-
-  const pointX = (cx - panX) / zoom;
-  const pointY = (cy - panY) / zoom;
-
-  const newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * factor));
-
-  panX = cx - pointX * newZoom;
-  panY = cy - pointY * newZoom;
-  zoom = newZoom;
-  applyTransform();
+function zoomBy(factor) {
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * factor));
+  isManualZoom = true;
+  updateCanvasScale();
 }
 
-zoomInBtn.addEventListener("click", () => zoomBy(1.2));
-zoomOutBtn.addEventListener("click", () => zoomBy(1 / 1.2));
-zoomResetBtn.addEventListener("click", resetView);
+zoomInBtn.addEventListener("click", () => zoomBy(1.15));
+zoomOutBtn.addEventListener("click", () => zoomBy(1 / 1.15));
+zoomResetBtn.addEventListener("click", fitToWidth);
 
 pageWrapEl.addEventListener(
   "wheel",
   (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return; // otherwise let normal scrolling happen
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
-    zoomBy(factor, e.clientX, e.clientY);
+    zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08);
   },
   { passive: false }
 );
 
-let isPanning = false;
-let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
-
-function isInteractiveTarget(target) {
-  return target.closest("input, textarea, button, select, .page-tab") !== null;
-}
-
-pageWrapEl.addEventListener("mousedown", (e) => {
-  if (isInteractiveTarget(e.target)) return;
-  isPanning = true;
-  pageWrapEl.classList.add("panning");
-  panStart = { x: e.clientX, y: e.clientY, panX, panY };
-});
-
-window.addEventListener("mousemove", (e) => {
-  if (!isPanning) return;
-  panX = panStart.panX + (e.clientX - panStart.x);
-  panY = panStart.panY + (e.clientY - panStart.y);
-  applyTransform();
-});
-
-window.addEventListener("mouseup", () => {
-  if (!isPanning) return;
-  isPanning = false;
-  pageWrapEl.classList.remove("panning");
+window.addEventListener("resize", () => {
+  if (!isManualZoom) fitToWidth();
+  else updateCanvasScale();
 });
 
 // ---------- Boot ----------
 applyAppearance("plain", "classic");
-applyTransform();
 showEmptyState();
 init();
