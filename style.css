@@ -1,7 +1,6 @@
 :root {
-  /* Chrome palette (sidebar, topbar, toolbar, buttons) — "Manuscript" style.
-     This never changes with the note theme; only the page itself and the
-     desk background behind it do. */
+  /* Chrome palette (ribbon, sidebar, buttons) — "Manuscript" style.
+     Never changes with the note theme; only the page and desk background do. */
   --chrome-bg: #3a1310;
   --chrome-bg-translucent: rgba(58, 19, 16, 0.92);
   --cream-text: #ecdfc8;
@@ -14,7 +13,7 @@
   --sans: 'Space Mono', 'Courier New', monospace;
   --typewriter: 'Courier Prime', 'Courier New', monospace;
 
-  /* Desk background default (before any entry is open) = Classic theme's desk */
+  /* Desk background default (Classic theme) */
   --desk-bg: #4a3f35;
 }
 
@@ -30,89 +29,6 @@ html, body {
 
 .hidden { display: none !important; }
 
-/* ---------- Login screen ---------- */
-.login-screen {
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--chrome-bg);
-  background-image:
-    radial-gradient(circle at 20% 20%, rgba(255,255,255,0.03), transparent 40%),
-    radial-gradient(circle at 80% 70%, rgba(255,255,255,0.02), transparent 40%);
-}
-
-.login-card {
-  background: var(--paper);
-  padding: 2.5rem 2.75rem;
-  width: 320px;
-  border-radius: 2px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
-  display: flex;
-  flex-direction: column;
-}
-
-.login-card h1 {
-  font-family: var(--typewriter);
-  font-size: 26px;
-  margin: 0 0 4px;
-  color: #24211c;
-  letter-spacing: 0.5px;
-}
-
-.login-sub {
-  font-size: 13px;
-  color: #4a453a;
-  margin: 0 0 22px;
-}
-
-.login-card label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #4a453a;
-  margin-bottom: 4px;
-}
-
-.login-card input {
-  font-family: var(--typewriter);
-  font-size: 14px;
-  padding: 9px 10px;
-  border: 1px solid #cfc6ac;
-  background: #fffdf7;
-  margin-bottom: 16px;
-  border-radius: 2px;
-  color: #24211c;
-}
-
-.login-card input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-#login-btn {
-  font-family: var(--sans);
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: var(--chrome-bg);
-  color: var(--cream-text);
-  border: none;
-  padding: 11px;
-  cursor: pointer;
-  border-radius: 2px;
-  margin-top: 6px;
-}
-
-#login-btn:hover { background: #4a1c16; }
-
-.login-error {
-  color: var(--danger);
-  font-size: 12px;
-  min-height: 16px;
-  margin: 10px 0 0;
-}
-
 /* ---------- App shell ---------- */
 .app {
   display: flex;
@@ -121,68 +37,130 @@ html, body {
   overflow: hidden;
 }
 
-.app-topbar {
+/* ---------- Ribbon: the only permanently-visible chrome ---------- */
+.ribbon {
   flex-shrink: 0;
-  height: 44px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 16px;
+  gap: 6px;
+  padding: 8px 16px;
   background: var(--chrome-bg);
   border-bottom: 1px solid var(--chrome-border);
 }
 
+.ribbon-btn {
+  font-family: var(--sans);
+  font-size: 12px;
+  background: rgba(255,255,255,0.05);
+  color: var(--cream-text);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.ribbon-btn:hover { background: rgba(255,255,255,0.1); }
+.ribbon-bold { font-weight: 700; }
+.ribbon-italic { font-style: italic; }
+.ribbon-danger { margin-left: auto; color: #e0a3a3; border-color: rgba(224,163,163,0.3); }
+.ribbon-danger:hover { background: rgba(161,61,61,0.25); }
+
+.ribbon-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 4px;
+}
+
+.ribbon-select {
+  font-family: var(--sans);
+  font-size: 12px;
+  background: rgba(255,255,255,0.05);
+  color: var(--cream-text);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.ribbon-select:hover { background: rgba(255,255,255,0.1); }
+.ribbon-select:focus { outline: none; border-color: var(--accent); }
+
+.save-status {
+  font-size: 11px;
+  color: var(--cream-muted);
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+/* ---------- Body area: sidebar drawer + main ---------- */
+.body-area {
+  flex: 1;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.sidebar-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 15;
+}
+
+/* Hidden by default, slides in as an overlay drawer over the page —
+   doesn't take up permanent horizontal space. */
+.sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px;
+  z-index: 20;
+  background: var(--chrome-bg);
+  color: var(--cream-text);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  border-right: 1px solid var(--chrome-border);
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+  box-shadow: 8px 0 24px rgba(0,0,0,0.3);
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+.sidebar-header {
+  padding: 0 4px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  margin-bottom: 12px;
+}
+
 .journal-name-input {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 0.03em;
-  text-align: right;
   background: transparent;
   border: 1px solid transparent;
   color: var(--cream-text);
-  padding: 5px 8px;
+  padding: 5px 6px;
   border-radius: 3px;
-  width: 220px;
-  max-width: 40vw;
+  width: 100%;
 }
 
-.journal-name-input:hover {
-  background: rgba(255,255,255,0.05);
-}
-
+.journal-name-input:hover { background: rgba(255,255,255,0.05); }
 .journal-name-input:focus {
   outline: none;
   background: rgba(255,255,255,0.08);
   border-color: var(--chrome-border);
 }
 
-.app-body {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-/* ---------- Sidebar ---------- */
-.sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  background: var(--chrome-bg);
-  color: var(--cream-text);
-  display: flex;
-  flex-direction: column;
-  padding: 18px 12px;
-  border-right: 1px solid var(--chrome-border);
-}
-
-.sidebar-header {
-  padding: 0 4px 14px;
-  border-bottom: 1px solid var(--chrome-border);
-  margin-bottom: 10px;
-}
-
 .sidebar-actions {
   display: flex;
   gap: 6px;
+  padding: 0 4px 12px;
 }
 
 .icon-btn {
@@ -201,7 +179,6 @@ html, body {
 .tree {
   flex: 1;
   overflow-y: auto;
-  padding-top: 4px;
 }
 
 .tree-row {
@@ -248,80 +225,12 @@ html, body {
 .tree-row:hover .row-delete { opacity: 1; }
 .tree-row .row-delete:hover { color: var(--danger); }
 
-.logout-btn {
-  font-family: var(--sans);
-  font-size: 12px;
-  background: transparent;
-  color: var(--cream-muted);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 3px;
-  padding: 8px;
-  cursor: pointer;
-  margin-top: 10px;
-}
-
-.logout-btn:hover { color: var(--cream-text); border-color: rgba(255,255,255,0.25); }
-
 /* ---------- Main / editor ---------- */
 .main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.toolbar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  background: var(--chrome-bg);
-  border-bottom: 1px solid var(--chrome-border);
-}
-
-.tb-btn {
-  font-family: var(--sans);
-  font-size: 12px;
-  background: rgba(255,255,255,0.05);
-  color: var(--cream-text);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 3px;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.tb-btn:hover { background: rgba(255,255,255,0.1); }
-.tb-bold { font-weight: 700; }
-.tb-italic { font-style: italic; }
-.tb-danger { margin-left: auto; color: #e0a3a3; border-color: rgba(224,163,163,0.3); }
-.tb-danger:hover { background: rgba(161,61,61,0.25); }
-
-.toolbar-divider {
-  width: 1px;
-  height: 20px;
-  background: rgba(255,255,255,0.1);
-  margin: 0 4px;
-}
-
-.tb-select {
-  font-family: var(--sans);
-  font-size: 12px;
-  background: rgba(255,255,255,0.05);
-  color: var(--cream-text);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 3px;
-  padding: 6px 8px;
-  cursor: pointer;
-}
-
-.tb-select:hover { background: rgba(255,255,255,0.1); }
-.tb-select:focus { outline: none; border-color: var(--accent); }
-
-.save-status {
-  font-size: 11px;
-  color: var(--cream-muted);
-  margin-left: 10px;
 }
 
 /* ---------- Page viewport: fit-to-width, vertical scroll, scale-to-zoom ---------- */
@@ -335,17 +244,11 @@ html, body {
   padding: 32px 0 60px;
 }
 
-/* Sized in JS to exactly match the scaled visual footprint of .canvas,
-   so native scrolling/centering behaves correctly at any zoom level. */
 .zoom-outer {
   position: relative;
   margin: 0 auto;
 }
 
-/* Absolutely positioned + transform:scale, per the standard "scrollable
-   zoom" pattern — keeps the parent's scroll size driven purely by the
-   explicit pixel size we set on .zoom-outer rather than the pre-transform
-   layout box. */
 .canvas {
   position: absolute;
   top: 0;
@@ -445,16 +348,15 @@ html, body {
 .page-tab .tab-close:hover { opacity: 1; color: var(--danger); }
 
 /* ---------- Page: scoped variables, overridden per theme + note type.
-   This is the "page itself" — deliberately untouched by the chrome style,
-   only changes via the theme dropdown. ---------- */
+   Deliberately untouched by the ribbon/sidebar chrome style. ---------- */
 .page {
-  /* defaults = Classic theme */
   --page-paper: #faf6ec;
   --page-ink: #24211c;
   --page-title-border: #d8cfb5;
   --page-shadow: rgba(36, 33, 28, 0.18);
   --page-font: 'Courier Prime', 'Courier New', monospace;
   --page-line-height: 1.9;
+  --user-font-size: 15px;
 
   display: flex;
   flex-direction: column;
@@ -463,11 +365,10 @@ html, body {
   box-shadow: 0 10px 40px var(--page-shadow), 0 2px 8px rgba(0,0,0,0.15);
   border-radius: 1px;
   transition: background 0.15s ease, color 0.15s ease;
-  overflow: hidden; /* pagination handles overflow — the page itself never scrolls */
+  overflow: hidden;
 }
 
-/* ----- Themes: paper + ink color only, each with its own complementary
-   desk background applied to .page-wrap via a matching data-theme ----- */
+/* ----- Themes: paper + ink color, plus a matching desk background ----- */
 .page[data-theme="classic"] {
   --page-paper: #faf6ec;
   --page-ink: #24211c;
@@ -506,11 +407,8 @@ html, body {
 .page-wrap[data-theme="mint"] { --desk-bg: #332733; background: var(--desk-bg); }
 
 /* ----- Note types: real, fixed physical dimensions + font -----
-   Plain        = US Letter (8.5x11in)
-   Author       = ISO A4 (210x297mm) — slightly taller/narrower than Letter
-   Scriptwriter = US Letter, with real screenplay margins (1.5in left, 1in others)
-   Diary        = Moleskine pocket notebook (3.5x5.5in)
-   Post-it      = Standard Post-it note (3x3in) */
+   Plain = US Letter | Author = ISO A4 | Scriptwriter = US Letter + real
+   screenplay margins | Diary = Moleskine pocket notebook | Post-it = 3x3in */
 .page[data-note-type="plain"] {
   --page-font: 'Courier Prime', 'Courier New', monospace;
   width: 680px;
@@ -559,20 +457,17 @@ html, body {
   background: transparent;
   font-family: var(--page-font);
   font-weight: 700;
-  font-size: 22px;
+  font-size: calc(var(--user-font-size) + 7px);
   color: var(--page-ink);
   margin-bottom: 18px;
   padding-bottom: 12px;
   border-bottom: 1px dashed var(--page-title-border);
 }
 
-.entry-title.title-hidden {
-  display: none;
-}
+.entry-title.title-hidden { display: none; }
 
 .page[data-note-type="postit"] .entry-title,
 .page[data-note-type="diary"] .entry-title {
-  font-size: 17px;
   margin-bottom: 10px;
   padding-bottom: 8px;
 }
@@ -581,21 +476,17 @@ html, body {
 
 .entry-editor {
   flex: 1;
-  min-height: 0; /* required so a flex child can actually shrink to fit */
+  min-height: 0;
   display: block;
   width: 100%;
   border: none;
   resize: none;
   background: transparent;
   font-family: var(--page-font);
-  font-size: 15px;
+  font-size: var(--user-font-size);
   line-height: var(--page-line-height);
   color: var(--page-ink);
   overflow: hidden;
-}
-
-.page[data-note-type="postit"] .entry-editor {
-  font-size: 14px;
 }
 
 .entry-editor:focus { outline: none; }
@@ -612,5 +503,5 @@ html, body {
 }
 
 @media (max-width: 640px) {
-  .sidebar { width: 200px; }
+  .sidebar { width: 220px; }
 }
