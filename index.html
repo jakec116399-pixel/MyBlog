@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Journal</title>
+<title>Notes</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#3a1310" />
+<link rel="icon" href="icons/icon-192.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Mono:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&family=Kalam:wght@400;700&family=Patrick+Hand&display=swap" rel="stylesheet">
@@ -11,68 +14,63 @@
 </head>
 <body>
 
-<!-- LOGIN SCREEN -->
-<div id="login-screen" class="login-screen">
-  <form id="login-form" class="login-card">
-    <h1>Journal</h1>
-    <p class="login-sub">Sign in to open your notebook.</p>
-    <label for="email">Email</label>
-    <input type="email" id="email" required autocomplete="username" />
-    <label for="password">Password</label>
-    <input type="password" id="password" required autocomplete="current-password" />
-    <button type="submit" id="login-btn">Sign in</button>
-    <p id="login-error" class="login-error"></p>
-  </form>
-</div>
+<div class="app">
+  <!-- THIN RIBBON: the only permanently visible chrome -->
+  <div class="ribbon">
+    <button id="sidebar-toggle-btn" class="ribbon-btn" title="Folders & entries">☰</button>
 
-<!-- MAIN APP -->
-<div id="app" class="app hidden">
-  <div class="app-topbar">
-    <input id="journal-name" class="journal-name-input" spellcheck="false" />
+    <span class="ribbon-divider"></span>
+
+    <button data-action="h1" class="ribbon-btn">H1</button>
+    <button data-action="h2" class="ribbon-btn">H2</button>
+    <button data-action="bold" class="ribbon-btn ribbon-bold">B</button>
+    <button data-action="italic" class="ribbon-btn ribbon-italic">i</button>
+    <button data-action="list" class="ribbon-btn">List</button>
+
+    <span class="ribbon-divider"></span>
+
+    <select id="font-size-select" class="ribbon-select" title="Font size">
+      <option value="13">Small</option>
+      <option value="15" selected>Medium</option>
+      <option value="18">Large</option>
+      <option value="22">Extra large</option>
+    </select>
+
+    <select id="note-type-select" class="ribbon-select" title="Note type">
+      <option value="plain">Plain</option>
+      <option value="scriptwriter">Scriptwriter</option>
+      <option value="author">Author</option>
+      <option value="diary">Diary</option>
+      <option value="postit">Post-it</option>
+    </select>
+
+    <select id="theme-select" class="ribbon-select" title="Theme">
+      <option value="classic">Classic</option>
+      <option value="night">Night</option>
+      <option value="sepia">Sepia</option>
+      <option value="blueprint">Blueprint</option>
+      <option value="mint">Mint</option>
+    </select>
+
+    <span class="save-status" id="save-status"></span>
+    <button id="delete-entry-btn" class="ribbon-btn ribbon-danger">Delete</button>
   </div>
 
-  <div class="app-body">
-    <aside class="sidebar">
+  <div class="body-area">
+    <!-- SIDEBAR: hidden by default, slides in as an overlay drawer -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+    <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-actions">
-          <button id="new-folder-btn" title="New folder" class="icon-btn">+ folder</button>
-          <button id="new-file-btn" title="New entry" class="icon-btn">+ entry</button>
-        </div>
+        <input id="journal-name" class="journal-name-input" spellcheck="false" />
+      </div>
+      <div class="sidebar-actions">
+        <button id="new-folder-btn" title="New folder" class="icon-btn">+ folder</button>
+        <button id="new-file-btn" title="New entry" class="icon-btn">+ entry</button>
       </div>
       <div id="tree" class="tree"></div>
-      <button id="logout-btn" class="logout-btn">Sign out</button>
     </aside>
 
     <main class="main">
-      <div class="toolbar">
-        <button data-action="h1" class="tb-btn">H1</button>
-        <button data-action="h2" class="tb-btn">H2</button>
-        <button data-action="bold" class="tb-btn tb-bold">B</button>
-        <button data-action="italic" class="tb-btn tb-italic">i</button>
-        <button data-action="list" class="tb-btn">List</button>
-
-        <span class="toolbar-divider"></span>
-
-        <select id="note-type-select" class="tb-select" title="Note type">
-          <option value="plain">Plain</option>
-          <option value="scriptwriter">Scriptwriter</option>
-          <option value="author">Author</option>
-          <option value="diary">Diary</option>
-          <option value="postit">Post-it</option>
-        </select>
-
-        <select id="theme-select" class="tb-select" title="Theme">
-          <option value="classic">Classic</option>
-          <option value="night">Night</option>
-          <option value="sepia">Sepia</option>
-          <option value="blueprint">Blueprint</option>
-          <option value="mint">Mint</option>
-        </select>
-
-        <span class="save-status" id="save-status"></span>
-        <button id="delete-entry-btn" class="tb-btn tb-danger">Delete</button>
-      </div>
-
       <div class="page-wrap" id="page-wrap">
         <div class="zoom-outer" id="zoom-outer">
           <div class="canvas" id="canvas">
@@ -85,7 +83,7 @@
             </div>
           </div>
         </div>
-        <p id="empty-state" class="empty-state hidden">Select an entry on the left, or create a new one.</p>
+        <p id="empty-state" class="empty-state hidden">Select an entry, or create a new one.</p>
         <div class="zoom-controls">
           <button id="zoom-out-btn" class="zoom-btn" title="Zoom out">−</button>
           <span id="zoom-level" class="zoom-level">100%</span>
@@ -97,7 +95,6 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="app.js"></script>
 </body>
 </html>
