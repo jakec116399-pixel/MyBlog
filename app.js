@@ -1,24 +1,81 @@
-// ---------- Configure these with your own Supabase project values ----------
-const SUPABASE_URL = "https://pvsjtxysphjcvrpnuops.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_268WI6TaUndTf52fd_tdNg_MhF27h9j";
-// -----------------------------------------------------------------------
+// ---------- Local-first storage (IndexedDB) ----------
+// No account, no network required. Everything lives in this browser.
+const DB_NAME = "notes-app-db";
+const DB_VERSION = 1;
+let dbPromise = null;
 
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+function openDB() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("folders")) db.createObjectStore("folders", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("entries")) db.createObjectStore("entries", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("pages")) db.createObjectStore("pages", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+
+async function idbGetAll(store) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store, "readonly").objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(store, key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store, "readonly").objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(store, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).put(value);
+    tx.oncomplete = () => resolve(value);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbDelete(store, key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function newId() {
+  return crypto.randomUUID();
+}
+
+async function getPagesForEntry(entryId) {
+  const all = await idbGetAll("pages");
+  return all.filter((p) => p.entry_id === entryId).sort((a, b) => a.position - b.position);
+}
 
 // ---------- DOM references ----------
-const loginScreen = document.getElementById("login-screen");
-const loginForm = document.getElementById("login-form");
-const emailInput = document.getElementById("email");
-const passwordInput = document.getElementById("password");
-const loginError = document.getElementById("login-error");
-const loginBtn = document.getElementById("login-btn");
-
-const appEl = document.getElementById("app");
+const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+const sidebarEl = document.getElementById("sidebar");
+const sidebarBackdropEl = document.getElementById("sidebar-backdrop");
 const journalNameInput = document.getElementById("journal-name");
 const treeEl = document.getElementById("tree");
 const newFolderBtn = document.getElementById("new-folder-btn");
 const newFileBtn = document.getElementById("new-file-btn");
-const logoutBtn = document.getElementById("logout-btn");
 
 const titleInput = document.getElementById("entry-title");
 const editorInput = document.getElementById("entry-editor");
@@ -30,6 +87,7 @@ const pageTabsEl = document.getElementById("page-tabs");
 const emptyState = document.getElementById("empty-state");
 const saveStatus = document.getElementById("save-status");
 const deleteEntryBtn = document.getElementById("delete-entry-btn");
+const fontSizeSelect = document.getElementById("font-size-select");
 const noteTypeSelect = document.getElementById("note-type-select");
 const themeSelect = document.getElementById("theme-select");
 const zoomInBtn = document.getElementById("zoom-in-btn");
@@ -45,9 +103,6 @@ const NOTE_TYPE_LABELS = {
   postit: "Post-it",
 };
 
-// Hidden element used purely to measure how much text fits in a page's
-// text area, by mirroring the editor's exact font/wrapping and binary
-// searching for the longest prefix that still fits within a height budget.
 const measureMirror = document.createElement("div");
 measureMirror.style.position = "absolute";
 measureMirror.style.visibility = "hidden";
@@ -60,131 +115,60 @@ document.body.appendChild(measureMirror);
 
 // ---------- State ----------
 let folders = [];
-let entries = [];               // lightweight: id, title, folder_id
+let entries = [];
 let openFolderIds = new Set();
 let currentEntryId = null;
-let pages = [];                 // all pages belonging to the currently open entry, ordered by position
+let pages = [];
 let currentPageId = null;
 let saveTimer = null;
 let journalNameSaveTimer = null;
-let dirtyPageIds = new Set();   // pages whose content/type/theme/position changed locally, pending save
+let dirtyPageIds = new Set();
 let titleDirty = false;
-let suppressReflow = false;     // true while programmatically setting editorInput.value
+let suppressReflow = false;
 
-// ---------- Auth ----------
-async function init() {
-  const { data } = await supabaseClient.auth.getSession();
-  if (data.session) {
-    showApp();
-    await loadData();
-    await loadJournalName();
-    await openStartingEntry();
-  } else {
-    showLogin();
-  }
+// ---------- Sidebar drawer ----------
+function openSidebar() {
+  sidebarEl.classList.add("open");
+  sidebarBackdropEl.classList.remove("hidden");
 }
-
-function showLogin() {
-  loginScreen.classList.remove("hidden");
-  appEl.classList.add("hidden");
+function closeSidebar() {
+  sidebarEl.classList.remove("open");
+  sidebarBackdropEl.classList.add("hidden");
 }
-
-function showApp() {
-  loginScreen.classList.add("hidden");
-  appEl.classList.remove("hidden");
-}
-
-loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  loginError.textContent = "";
-  loginBtn.disabled = true;
-  loginBtn.textContent = "Signing in...";
-
-  const { error } = await supabaseClient.auth.signInWithPassword({
-    email: emailInput.value.trim(),
-    password: passwordInput.value,
-  });
-
-  loginBtn.disabled = false;
-  loginBtn.textContent = "Sign in";
-
-  if (error) {
-    loginError.textContent = "Could not sign in. Check your email and password.";
-    return;
-  }
-
-  showApp();
-  await loadData();
-  await loadJournalName();
-  await openStartingEntry();
+sidebarToggleBtn.addEventListener("click", () => {
+  if (sidebarEl.classList.contains("open")) closeSidebar();
+  else openSidebar();
 });
+sidebarBackdropEl.addEventListener("click", closeSidebar);
 
-logoutBtn.addEventListener("click", async () => {
-  await supabaseClient.auth.signOut();
-  currentEntryId = null;
-  currentPageId = null;
-  showLogin();
-});
-
-// ---------- Journal name (top right, editable) ----------
+// ---------- Journal name ----------
 async function loadJournalName() {
-  const { data, error } = await supabaseClient.from("settings").select("journal_name").maybeSingle();
-
-  if (error) {
-    console.error(error);
+  const rec = await idbGet("settings", "journal_name");
+  if (rec) {
+    journalNameInput.value = rec.value;
+  } else {
     journalNameInput.value = "My notes";
-    return;
+    await idbPut("settings", { key: "journal_name", value: "My notes" });
   }
-
-  if (!data) {
-    const { data: created, error: createErr } = await supabaseClient
-      .from("settings")
-      .insert({ journal_name: "My notes" })
-      .select("journal_name")
-      .single();
-    if (createErr) {
-      console.error(createErr);
-      journalNameInput.value = "My notes";
-      return;
-    }
-    journalNameInput.value = created.journal_name;
-    return;
-  }
-
-  journalNameInput.value = data.journal_name;
 }
 
 journalNameInput.addEventListener("input", () => {
   clearTimeout(journalNameSaveTimer);
-  journalNameSaveTimer = setTimeout(saveJournalName, 500);
+  journalNameSaveTimer = setTimeout(saveJournalName, 400);
 });
-
 journalNameInput.addEventListener("blur", () => {
   clearTimeout(journalNameSaveTimer);
   saveJournalName();
 });
-
 async function saveJournalName() {
   const name = journalNameInput.value.trim() || "My notes";
-  const { error } = await supabaseClient.from("settings").update({ journal_name: name }).select();
-  if (error) console.error(error);
+  await idbPut("settings", { key: "journal_name", value: name });
 }
 
 // ---------- Data loading ----------
 async function loadData() {
-  const [{ data: folderData, error: folderErr }, { data: entryData, error: entryErr }] =
-    await Promise.all([
-      supabaseClient.from("folders").select("*").order("created_at"),
-      supabaseClient.from("entries").select("id, title, folder_id, created_at").order("created_at"),
-    ]);
-
-  if (folderErr || entryErr) {
-    console.error(folderErr || entryErr);
-    return;
-  }
-
-  folders = folderData;
-  entries = entryData;
+  folders = await idbGetAll("folders");
+  entries = await idbGetAll("entries");
   renderTree();
 }
 
@@ -192,15 +176,7 @@ async function openStartingEntry() {
   const untitledCandidates = entries.filter((e) => !e.title);
 
   for (const candidate of untitledCandidates) {
-    const { data: candidatePages, error } = await supabaseClient
-      .from("pages")
-      .select("*")
-      .eq("entry_id", candidate.id)
-      .order("position");
-    if (error) {
-      console.error(error);
-      continue;
-    }
+    const candidatePages = await getPagesForEntry(candidate.id);
     const isEmpty = candidatePages.every((p) => !p.content || !p.content.trim());
     if (isEmpty && candidatePages.length) {
       await openEntry(candidate.id, candidatePages);
@@ -262,7 +238,10 @@ function renderEntryList(entryList, container, depth) {
       <span class="row-label">${label}</span>
       <span class="row-delete" title="Delete entry">✕</span>
     `;
-    row.querySelector(".row-label").addEventListener("click", () => openEntry(entry.id));
+    row.querySelector(".row-label").addEventListener("click", async () => {
+      await openEntry(entry.id);
+      closeSidebar();
+    });
     row.querySelector(".row-delete").addEventListener("click", (e) => {
       e.stopPropagation();
       deleteEntry(entry.id);
@@ -287,49 +266,41 @@ function escapeHtml(str) {
 newFolderBtn.addEventListener("click", async () => {
   const name = prompt("Folder name:");
   if (!name) return;
-  const { data, error } = await supabaseClient
-    .from("folders")
-    .insert({ name, parent_id: currentParentFolderId() })
-    .select()
-    .single();
-  if (error) return console.error(error);
-  folders.push(data);
-  if (data.parent_id) openFolderIds.add(data.parent_id);
+  const folder = { id: newId(), name, parent_id: null, created_at: Date.now() };
+  await idbPut("folders", folder);
+  folders.push(folder);
   renderTree();
 });
 
-newFileBtn.addEventListener("click", createAndOpenNewEntry);
+newFileBtn.addEventListener("click", async () => {
+  await createAndOpenNewEntry();
+  closeSidebar();
+});
 
 async function createAndOpenNewEntry() {
-  const { data: entryData, error: entryErr } = await supabaseClient
-    .from("entries")
-    .insert({ title: "", folder_id: currentParentFolderId() })
-    .select("id, title, folder_id, created_at")
-    .single();
-  if (entryErr) return console.error(entryErr);
+  const entry = { id: newId(), title: "", folder_id: null, created_at: Date.now() };
+  await idbPut("entries", entry);
 
-  const { data: pageData, error: pageErr } = await supabaseClient
-    .from("pages")
-    .insert({ entry_id: entryData.id, note_type: "plain", theme: "classic", content: "", position: 0 })
-    .select()
-    .single();
-  if (pageErr) return console.error(pageErr);
+  const page = {
+    id: newId(),
+    entry_id: entry.id,
+    note_type: "plain",
+    theme: "classic",
+    font_size: 15,
+    content: "",
+    position: 0,
+  };
+  await idbPut("pages", page);
 
-  entries.push(entryData);
-  if (entryData.folder_id) openFolderIds.add(entryData.folder_id);
+  entries.push(entry);
   renderTree();
-  await openEntry(entryData.id, [pageData]);
-}
-
-function currentParentFolderId() {
-  return null;
+  await openEntry(entry.id, [page]);
 }
 
 // ---------- Deleting ----------
 async function deleteFolder(id) {
   if (!confirm("Delete this folder and everything inside it?")) return;
-  const { error } = await supabaseClient.from("folders").delete().eq("id", id);
-  if (error) return console.error(error);
+  await idbDelete("folders", id);
   folders = folders.filter((f) => f.id !== id);
   entries = entries.filter((e) => e.folder_id !== id);
   renderTree();
@@ -337,8 +308,10 @@ async function deleteFolder(id) {
 
 async function deleteEntry(id) {
   if (!confirm("Delete this entry and all its pages?")) return;
-  const { error } = await supabaseClient.from("entries").delete().eq("id", id);
-  if (error) return console.error(error);
+  const entryPages = await getPagesForEntry(id);
+  await Promise.all(entryPages.map((p) => idbDelete("pages", p.id)));
+  await idbDelete("entries", id);
+
   entries = entries.filter((e) => e.id !== id);
   if (currentEntryId === id) {
     currentEntryId = null;
@@ -364,22 +337,9 @@ async function openEntry(id, preloadedPages) {
   currentEntryId = id;
   titleInput.value = entry.title || "";
 
-  if (preloadedPages) {
-    pages = preloadedPages;
-  } else {
-    const { data, error } = await supabaseClient
-      .from("pages")
-      .select("*")
-      .eq("entry_id", id)
-      .order("position");
-    if (error) {
-      console.error(error);
-      return;
-    }
-    pages = data && data.length ? data : [];
-  }
-
+  pages = preloadedPages || (await getPagesForEntry(id));
   currentPageId = pages[0] ? pages[0].id : null;
+
   renderPageTabs();
   loadPageIntoEditor(currentPageId);
   showEditor();
@@ -398,16 +358,18 @@ function loadPageIntoEditor(pageId) {
   suppressReflow = true;
   editorInput.value = page.content || "";
   suppressReflow = false;
-  applyAppearance(page.note_type || "plain", page.theme || "classic");
+  applyAppearance(page.note_type || "plain", page.theme || "classic", page.font_size || 15);
   titleInput.classList.toggle("title-hidden", !isEntryFirstPage(pageId));
 }
 
-function applyAppearance(noteType, theme) {
+function applyAppearance(noteType, theme, fontSize) {
   pageEl.setAttribute("data-note-type", noteType);
   pageEl.setAttribute("data-theme", theme);
+  pageEl.style.setProperty("--user-font-size", fontSize + "px");
   pageWrapEl.setAttribute("data-theme", theme);
   noteTypeSelect.value = noteType;
   themeSelect.value = theme;
+  fontSizeSelect.value = String(fontSize);
 }
 
 // ---------- Page tabs ----------
@@ -415,12 +377,10 @@ function renderPageTabs() {
   pageTabsEl.innerHTML = "";
   if (pages.length <= 1) return;
 
-  // Number consecutive pages that share a note type, e.g. "Plain 1", "Plain 2"
   const labels = pages.map((p, i) => {
     const sameTypeRunLength = pages.filter((q) => q.note_type === p.note_type).length;
     if (sameTypeRunLength <= 1) return NOTE_TYPE_LABELS[p.note_type] || p.note_type;
-    const indexWithinType =
-      pages.slice(0, i + 1).filter((q) => q.note_type === p.note_type).length;
+    const indexWithinType = pages.slice(0, i + 1).filter((q) => q.note_type === p.note_type).length;
     return `${NOTE_TYPE_LABELS[p.note_type] || p.note_type} ${indexWithinType}`;
   });
 
@@ -455,8 +415,7 @@ async function deletePage(pageId) {
     return;
   }
   if (!confirm("Delete this page?")) return;
-  const { error } = await supabaseClient.from("pages").delete().eq("id", pageId);
-  if (error) return console.error(error);
+  await idbDelete("pages", pageId);
 
   pages = pages.filter((p) => p.id !== pageId);
   renumberPositions();
@@ -465,6 +424,7 @@ async function deletePage(pageId) {
     loadPageIntoEditor(currentPageId);
   }
   renderPageTabs();
+  persistDirtyPages();
 }
 
 function showEditor() {
@@ -472,7 +432,6 @@ function showEditor() {
   pageTabsEl.classList.remove("hidden");
   emptyState.classList.add("hidden");
 }
-
 function showEmptyState() {
   pageEl.classList.add("hidden");
   pageTabsEl.classList.add("hidden");
@@ -483,7 +442,7 @@ function showEmptyState() {
 function scheduleSave() {
   saveStatus.textContent = "Saving...";
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveCurrent, 500);
+  saveTimer = setTimeout(saveCurrent, 400);
 }
 
 async function flushSave() {
@@ -493,47 +452,29 @@ async function flushSave() {
   await saveCurrent();
 }
 
+async function persistDirtyPages() {
+  const jobs = [];
+  for (const pageId of dirtyPageIds) {
+    const page = pages.find((p) => p.id === pageId);
+    if (page) jobs.push(idbPut("pages", page));
+  }
+  dirtyPageIds.clear();
+  await Promise.all(jobs);
+}
+
 async function saveCurrent() {
   if (!currentEntryId) return;
 
-  const jobs = [];
-
   if (titleDirty) {
-    jobs.push(
-      supabaseClient.from("entries").update({ title: titleInput.value }).eq("id", currentEntryId)
-    );
     const entry = entries.find((e) => e.id === currentEntryId);
-    if (entry) entry.title = titleInput.value;
+    if (entry) {
+      entry.title = titleInput.value;
+      await idbPut("entries", entry);
+    }
     titleDirty = false;
   }
 
-  for (const pageId of dirtyPageIds) {
-    const page = pages.find((p) => p.id === pageId);
-    if (!page) continue;
-    jobs.push(
-      supabaseClient
-        .from("pages")
-        .update({
-          content: page.content,
-          note_type: page.note_type,
-          theme: page.theme,
-          position: page.position,
-        })
-        .eq("id", page.id)
-    );
-  }
-  dirtyPageIds.clear();
-
-  if (jobs.length === 0) return;
-
-  const results = await Promise.all(jobs);
-  const failed = results.find((r) => r.error);
-  if (failed) {
-    saveStatus.textContent = "Could not save";
-    console.error(failed.error);
-    return;
-  }
-
+  await persistDirtyPages();
   saveStatus.textContent = "Saved";
   renderTree();
 }
@@ -544,11 +485,6 @@ titleInput.addEventListener("input", () => {
 });
 
 // ---------- Pagination engine ----------
-// The whole idea: a run of pages sharing the same note type is one continuous
-// document under the hood. On every keystroke we rebuild that full text,
-// re-split it to fit the fixed page size, and figure out which resulting
-// page the cursor now falls on — creating or removing linked pages as needed.
-
 function getChainIndices(pageId) {
   const idx = pages.findIndex((p) => p.id === pageId);
   if (idx === -1) return [idx, idx];
@@ -570,14 +506,11 @@ function measureFitLength(text, maxHeight, widthPx) {
 
   if (text.length === 0) return 0;
 
-  let lo = 0;
-  let hi = text.length;
-  let best = 0;
+  let lo = 0, hi = text.length, best = 0;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     measureMirror.textContent = text.slice(0, mid);
-    const h = measureMirror.scrollHeight;
-    if (h <= maxHeight) {
+    if (measureMirror.scrollHeight <= maxHeight) {
       best = mid;
       lo = mid + 1;
     } else {
@@ -588,7 +521,6 @@ function measureFitLength(text, maxHeight, widthPx) {
 }
 
 function availableHeightFor(page, forFirstEntryPage) {
-  // Uses the live page element's own box, so it always matches current CSS.
   const style = getComputedStyle(pageEl);
   const padTop = parseFloat(style.paddingTop);
   const padBottom = parseFloat(style.paddingBottom);
@@ -609,9 +541,6 @@ function renumberPositions() {
   });
 }
 
-// Rebuilds a chain of same-typed pages from `fullText`, splitting it across
-// as many pages as needed, creating/removing pages to match, and returning
-// which page + local offset a given absolute caret offset lands on.
 function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
   const templatePage = pages[chainStart];
   const width = editorInput.clientWidth;
@@ -633,7 +562,6 @@ function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
       chunks.push(remaining);
       break;
     }
-    // Avoid splitting mid-word where a nearby space allows a cleaner break.
     let breakAt = fitLen;
     const lookback = remaining.lastIndexOf(" ", fitLen);
     if (lookback > fitLen - 20 && lookback > 0) breakAt = lookback + 1;
@@ -657,34 +585,28 @@ function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
       resultPages.push(page);
     } else {
       const newPage = {
-        id: "temp-" + Math.random().toString(36).slice(2),
+        id: newId(),
         entry_id: currentEntryId,
         note_type: templatePage.note_type,
         theme: templatePage.theme,
+        font_size: templatePage.font_size,
         content: chunks[i],
-        position: 0, // fixed up by renumberPositions()
+        position: 0,
       };
       resultPages.push(newPage);
       dirtyPageIds.add(newPage.id);
-      persistNewPage(newPage);
     }
   }
 
-  // Drop chain pages beyond what's now needed.
   for (let i = chunks.length; i < existingChainPages.length; i++) {
     const stale = existingChainPages[i];
     dirtyPageIds.delete(stale.id);
-    if (!String(stale.id).startsWith("temp-")) {
-      supabaseClient.from("pages").delete().eq("id", stale.id).then(({ error }) => {
-        if (error) console.error(error);
-      });
-    }
+    idbDelete("pages", stale.id).catch(console.error);
   }
 
   pages.splice(chainStart, existingChainPages.length, ...resultPages);
   renumberPositions();
 
-  // Locate which resulting page holds the caret.
   let cumulative = 0;
   let targetPage = resultPages[resultPages.length - 1];
   let localOffset = chunks[chunks.length - 1].length;
@@ -699,37 +621,6 @@ function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
   }
 
   return { targetPageId: targetPage.id, localOffset };
-}
-
-// New pages created mid-reflow get a real id from Supabase in the background;
-// we swap the temp id for the real one once it comes back so future saves work.
-function persistNewPage(newPage) {
-  supabaseClient
-    .from("pages")
-    .insert({
-      entry_id: newPage.entry_id,
-      note_type: newPage.note_type,
-      theme: newPage.theme,
-      content: newPage.content,
-      position: newPage.position,
-    })
-    .select()
-    .single()
-    .then(({ data, error }) => {
-      if (error) {
-        console.error(error);
-        return;
-      }
-      const stillDirty = dirtyPageIds.has(newPage.id);
-      const idx = pages.findIndex((p) => p.id === newPage.id);
-      if (idx !== -1) {
-        pages[idx] = { ...pages[idx], id: data.id };
-        if (currentPageId === newPage.id) currentPageId = data.id;
-        dirtyPageIds.delete(newPage.id);
-        if (stillDirty) dirtyPageIds.add(data.id);
-        renderPageTabs();
-      }
-    });
 }
 
 function runReflowFromEditor() {
@@ -764,9 +655,6 @@ editorInput.addEventListener("input", () => {
   runReflowFromEditor();
 });
 
-// Backspace at the very start of a page reaches back into the previous page
-// in the chain; Delete at the very end reaches forward into the next one.
-// Both feel like flipping back/forward through continuous paper.
 editorInput.addEventListener("keydown", (e) => {
   const atStart = editorInput.selectionStart === 0 && editorInput.selectionEnd === 0;
   const atEnd =
@@ -822,7 +710,18 @@ function mergeAcrossBoundary(direction) {
   scheduleSave();
 }
 
-// ---------- Note type dropdown ----------
+// ---------- Ribbon controls: font size, note type, theme ----------
+fontSizeSelect.addEventListener("change", () => {
+  const page = pages.find((p) => p.id === currentPageId);
+  if (!page) return;
+  const size = parseInt(fontSizeSelect.value, 10);
+  page.font_size = size;
+  dirtyPageIds.add(page.id);
+  pageEl.style.setProperty("--user-font-size", size + "px");
+  // Capacity per page changes with font size, so re-split the whole chain.
+  runReflowFromEditor();
+});
+
 noteTypeSelect.addEventListener("change", async () => {
   const newType = noteTypeSelect.value;
   const page = pages.find((p) => p.id === currentPageId);
@@ -839,23 +738,16 @@ noteTypeSelect.addEventListener("change", async () => {
 
   await flushSave();
 
-  const { data: newPage, error } = await supabaseClient
-    .from("pages")
-    .insert({
-      entry_id: currentEntryId,
-      note_type: newType,
-      theme: page.theme,
-      content: "",
-      position: pages.length,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error(error);
-    noteTypeSelect.value = page.note_type;
-    return;
-  }
+  const newPage = {
+    id: newId(),
+    entry_id: currentEntryId,
+    note_type: newType,
+    theme: page.theme,
+    font_size: page.font_size,
+    content: "",
+    position: pages.length,
+  };
+  await idbPut("pages", newPage);
 
   pages.push(newPage);
   renumberPositions();
@@ -875,8 +767,8 @@ themeSelect.addEventListener("change", () => {
   scheduleSave();
 });
 
-// ---------- Toolbar formatting ----------
-document.querySelectorAll(".tb-btn[data-action]").forEach((btn) => {
+// ---------- Formatting buttons ----------
+document.querySelectorAll(".ribbon-btn[data-action]").forEach((btn) => {
   btn.addEventListener("click", () => {
     const action = btn.dataset.action;
     const wraps = {
@@ -904,18 +796,14 @@ function wrapSelection(before, after) {
 }
 
 // ---------- Fit-to-width view, native scroll, zoom-to-shrink ----------
-// The page always starts scaled to fill the available width. Vertical
-// scrolling is the browser's normal scrollbar/wheel behavior. Zooming
-// (buttons, or Ctrl/Cmd + scroll) scales the page down from that baseline
-// rather than moving it around.
 let zoom = 1;
 let isManualZoom = false;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 3;
-const VIEW_SIDE_INSET = 48; // breathing room so the page doesn't touch the viewport edges
+const VIEW_SIDE_INSET = 48;
 
 function updateCanvasScale() {
-  const w = canvasEl.offsetWidth;   // unaffected by the current transform
+  const w = canvasEl.offsetWidth;
   const h = canvasEl.offsetHeight;
   zoomOuterEl.style.width = w * zoom + "px";
   zoomOuterEl.style.height = h * zoom + "px";
@@ -926,7 +814,7 @@ function updateCanvasScale() {
 function fitToWidth() {
   const available = pageWrapEl.clientWidth - VIEW_SIDE_INSET;
   const pageWidth = pageEl.offsetWidth;
-  if (pageWidth === 0) return; // page not visible yet (e.g. empty state)
+  if (pageWidth === 0) return;
   zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, available / pageWidth));
   isManualZoom = false;
   updateCanvasScale();
@@ -945,7 +833,7 @@ zoomResetBtn.addEventListener("click", fitToWidth);
 pageWrapEl.addEventListener(
   "wheel",
   (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return; // otherwise let normal scrolling happen
+    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08);
   },
@@ -957,7 +845,18 @@ window.addEventListener("resize", () => {
   else updateCanvasScale();
 });
 
+// ---------- PWA: offline support + installability ----------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => console.error(err));
+  });
+}
+
 // ---------- Boot ----------
-applyAppearance("plain", "classic");
+applyAppearance("plain", "classic", 15);
 showEmptyState();
-init();
+(async function init() {
+  await loadData();
+  await loadJournalName();
+  await openStartingEntry();
+})();
