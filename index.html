@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Notes</title>
+<title>JustNotes</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#3a1310" />
 <link rel="icon" href="icons/icon-192.png" />
@@ -38,8 +38,9 @@
 
     <select id="note-type-select" class="ribbon-select" title="Note type">
       <option value="plain">Plain</option>
-      <option value="scriptwriter">Scriptwriter</option>
-      <option value="author">Author</option>
+      <option value="markdown">Markdown</option>
+      <option value="scriptwriter">Script</option>
+      <option value="author">Book</option>
       <option value="diary">Diary</option>
       <option value="postit">Post-it</option>
     </select>
@@ -48,9 +49,11 @@
       <option value="classic">Classic</option>
       <option value="night">Night</option>
       <option value="sepia">Sepia</option>
-      <option value="blueprint">Blueprint</option>
+      <option value="blueprint">Blue</option>
       <option value="mint">Mint</option>
     </select>
+
+    <button id="markdown-preview-btn" class="ribbon-btn hidden" title="Toggle rendered preview">Preview</button>
 
     <span class="save-status" id="save-status"></span>
     <button id="install-btn" class="ribbon-btn hidden" title="Download desktop">⬇ Desktop</button>
@@ -79,6 +82,7 @@
               <div class="page" id="page">
                 <input id="entry-title" class="entry-title" />
                 <textarea id="entry-editor" class="entry-editor" placeholder="Start writing..."></textarea>
+                <div id="markdown-preview" class="markdown-preview hidden"></div>
               </div>
               <div id="page-tabs" class="page-tabs"></div>
             </div>
