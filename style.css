@@ -10,7 +10,7 @@
   --danger: #c9615a;
   --chrome-border: rgba(230, 190, 140, 0.14);
   --paper: #faf6ec;
-  --sans: 'Space Mono', 'Courier New', monospace;
+  --sans: 'EB Garamond', Georgia, serif;
   --typewriter: 'Courier Prime', 'Courier New', monospace;
 
   /* Desk background default (Classic theme) */
@@ -51,6 +51,9 @@ html, body {
 .ribbon-btn {
   font-family: var(--sans);
   font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   background: rgba(255,255,255,0.05);
   color: var(--cream-text);
   border: 1px solid rgba(255,255,255,0.1);
@@ -65,6 +68,12 @@ html, body {
 .ribbon-danger { margin-left: auto; color: #e0a3a3; border-color: rgba(224,163,163,0.3); }
 .ribbon-danger:hover { background: rgba(161,61,61,0.25); }
 
+#install-btn {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+#install-btn:hover { background: rgba(var(--accent-rgb), 0.15); }
+
 .ribbon-divider {
   width: 1px;
   height: 20px;
@@ -75,6 +84,8 @@ html, body {
 .ribbon-select {
   font-family: var(--sans);
   font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   background: rgba(255,255,255,0.05);
   color: var(--cream-text);
   border: 1px solid rgba(255,255,255,0.1);
@@ -140,8 +151,9 @@ html, body {
 
 .journal-name-input {
   font-family: var(--sans);
-  font-size: 14px;
-  letter-spacing: 0.03em;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   background: transparent;
   border: 1px solid transparent;
   color: var(--cream-text);
@@ -166,6 +178,9 @@ html, body {
 .icon-btn {
   font-family: var(--sans);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   background: rgba(255,255,255,0.06);
   color: var(--cream-text);
   border: 1px solid rgba(255,255,255,0.1);
