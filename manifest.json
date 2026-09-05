@@ -1,6 +1,6 @@
 {
-  "name": "Notes",
-  "short_name": "Notes",
+  "name": "JustNotes",
+  "short_name": "JustNotes",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
