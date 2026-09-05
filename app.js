@@ -91,6 +91,8 @@ const fontSizeSelect = document.getElementById("font-size-select");
 const noteTypeSelect = document.getElementById("note-type-select");
 const themeSelect = document.getElementById("theme-select");
 const installBtn = document.getElementById("install-btn");
+const markdownPreviewBtn = document.getElementById("markdown-preview-btn");
+const markdownPreviewEl = document.getElementById("markdown-preview");
 const zoomInBtn = document.getElementById("zoom-in-btn");
 const zoomOutBtn = document.getElementById("zoom-out-btn");
 const zoomResetBtn = document.getElementById("zoom-reset-btn");
@@ -98,8 +100,9 @@ const zoomLevelEl = document.getElementById("zoom-level");
 
 const NOTE_TYPE_LABELS = {
   plain: "Plain",
-  scriptwriter: "Scriptwriter",
-  author: "Author",
+  markdown: "Markdown",
+  scriptwriter: "Script",
+  author: "Book",
   diary: "Diary",
   postit: "Post-it",
 };
@@ -354,6 +357,17 @@ function isEntryFirstPage(pageId) {
   return pages.length > 0 && pages[0].id === pageId;
 }
 
+// Plain is meant to be a truly blank page — no title bar at all, write
+// from the very top. Every other type still shows a title on the entry's
+// first page, as before.
+function shouldHideTitle(page) {
+  if (!page) return true;
+  if (page.note_type === "plain") return true;
+  return !isEntryFirstPage(page.id);
+}
+
+let markdownPreviewOn = false;
+
 function loadPageIntoEditor(pageId) {
   const page = pages.find((p) => p.id === pageId);
   if (!page) return;
@@ -361,7 +375,10 @@ function loadPageIntoEditor(pageId) {
   editorInput.value = page.content || "";
   suppressReflow = false;
   applyAppearance(page.note_type || "plain", page.theme || "classic", page.font_size || 15);
-  titleInput.classList.toggle("title-hidden", !isEntryFirstPage(pageId));
+  titleInput.classList.toggle("title-hidden", shouldHideTitle(page));
+  markdownPreviewOn = false;
+  setMarkdownPreviewVisible(false);
+  markdownPreviewBtn.classList.toggle("hidden", page.note_type !== "markdown");
 }
 
 function applyAppearance(noteType, theme, fontSize) {
@@ -674,7 +691,7 @@ function runReflowFromEditor() {
   suppressReflow = false;
   editorInput.selectionStart = localOffset;
   editorInput.selectionEnd = localOffset;
-  titleInput.classList.toggle("title-hidden", !isEntryFirstPage(currentPageId));
+  titleInput.classList.toggle("title-hidden", shouldHideTitle(targetPage));
 
   renderPageTabs();
   scheduleSave();
@@ -734,13 +751,78 @@ function mergeAcrossBoundary(direction) {
   suppressReflow = false;
   editorInput.selectionStart = localOffset;
   editorInput.selectionEnd = localOffset;
-  titleInput.classList.toggle("title-hidden", !isEntryFirstPage(currentPageId));
+  titleInput.classList.toggle("title-hidden", shouldHideTitle(targetPage));
   editorInput.focus();
 
   renderPageTabs();
   scheduleSave();
   scrollCaretIntoView();
 }
+
+// ---------- Markdown preview (Markdown note type only) ----------
+function escapeForHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Deliberately minimal — headings, bold, italic, bullet lists, paragraphs.
+// This is a writing app, not a full CommonMark implementation.
+function renderMarkdown(text) {
+  const lines = escapeForHtml(text).split("\n");
+  const htmlParts = [];
+  let listOpen = false;
+
+  const closeList = () => {
+    if (listOpen) {
+      htmlParts.push("</ul>");
+      listOpen = false;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine;
+    let inline = line
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+    if (/^#\s+/.test(line)) {
+      closeList();
+      htmlParts.push(`<h1>${inline.replace(/^#\s+/, "")}</h1>`);
+    } else if (/^##\s+/.test(line)) {
+      closeList();
+      htmlParts.push(`<h2>${inline.replace(/^##\s+/, "")}</h2>`);
+    } else if (/^-\s+/.test(line)) {
+      if (!listOpen) {
+        htmlParts.push("<ul>");
+        listOpen = true;
+      }
+      htmlParts.push(`<li>${inline.replace(/^-\s+/, "")}</li>`);
+    } else if (line.trim() === "") {
+      closeList();
+    } else {
+      closeList();
+      htmlParts.push(`<p>${inline}</p>`);
+    }
+  }
+  closeList();
+  return htmlParts.join("");
+}
+
+function setMarkdownPreviewVisible(visible) {
+  editorInput.classList.toggle("hidden", visible);
+  markdownPreviewEl.classList.toggle("hidden", !visible);
+  markdownPreviewBtn.classList.toggle("active-preview", visible);
+  if (visible) {
+    markdownPreviewEl.innerHTML = renderMarkdown(editorInput.value);
+  }
+}
+
+markdownPreviewBtn.addEventListener("click", () => {
+  markdownPreviewOn = !markdownPreviewOn;
+  setMarkdownPreviewVisible(markdownPreviewOn);
+  if (!markdownPreviewOn) editorInput.focus();
+});
 
 // ---------- Ribbon controls: font size, note type, theme ----------
 fontSizeSelect.addEventListener("change", () => {
@@ -763,6 +845,10 @@ noteTypeSelect.addEventListener("change", async () => {
     page.note_type = newType;
     dirtyPageIds.add(page.id);
     pageEl.setAttribute("data-note-type", newType);
+    titleInput.classList.toggle("title-hidden", shouldHideTitle(page));
+    markdownPreviewOn = false;
+    setMarkdownPreviewVisible(false);
+    markdownPreviewBtn.classList.toggle("hidden", newType !== "markdown");
     fitToWidth();
     scheduleSave();
     return;
