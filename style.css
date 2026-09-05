@@ -339,6 +339,16 @@ html, body {
   margin-top: 14px;
   flex-wrap: wrap;
   justify-content: center;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.page-tabs.tabs-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .page-tab {
@@ -389,6 +399,17 @@ html, body {
   border-radius: 1px;
   transition: background 0.15s ease, color 0.15s ease;
   overflow: hidden;
+}
+
+/* A brief, tangible pulse when typing carries you onto a new linked page,
+   or backspacing merges you back onto the previous one. */
+.page.page-flash {
+  animation: pageFlash 0.5s ease;
+}
+
+@keyframes pageFlash {
+  0% { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.55), 0 10px 40px var(--page-shadow), 0 2px 8px rgba(0,0,0,0.15); }
+  100% { box-shadow: 0 10px 40px var(--page-shadow), 0 2px 8px rgba(0,0,0,0.15); }
 }
 
 /* ----- Themes: paper + ink color, plus a matching desk background ----- */
