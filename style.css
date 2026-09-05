@@ -74,6 +74,12 @@ html, body {
 }
 #install-btn:hover { background: rgba(var(--accent-rgb), 0.15); }
 
+#markdown-preview-btn.active-preview {
+  background: rgba(var(--accent-rgb), 0.3);
+  color: var(--cream-text);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
 .ribbon-divider {
   width: 1px;
   height: 20px;
@@ -243,6 +249,7 @@ html, body {
 /* ---------- Main / editor ---------- */
 .main {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -251,6 +258,7 @@ html, body {
 /* ---------- Page viewport: fit-to-width, vertical scroll, scale-to-zoom ---------- */
 .page-wrap {
   flex: 1;
+  min-height: 0;
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
@@ -424,12 +432,29 @@ html, body {
 /* ----- Note types: real, fixed physical dimensions + font -----
    Plain = US Letter | Author = ISO A4 | Scriptwriter = US Letter + real
    screenplay margins | Diary = Moleskine pocket notebook | Post-it = 3x3in */
-.page[data-note-type="plain"] {
+.page[data-note-type="plain"],
+.page[data-note-type="markdown"] {
   --page-font: 'Courier Prime', 'Courier New', monospace;
   width: 680px;
   height: 880px;
   padding: 48px;
 }
+
+.markdown-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  font-family: var(--page-font);
+  font-size: var(--user-font-size);
+  line-height: var(--page-line-height);
+  color: var(--page-ink);
+}
+.markdown-preview h1 { font-size: 1.5em; margin: 0 0 0.4em; }
+.markdown-preview h2 { font-size: 1.25em; margin: 0.6em 0 0.4em; }
+.markdown-preview p { margin: 0 0 0.8em; }
+.markdown-preview ul { margin: 0 0 0.8em; padding-left: 1.4em; }
+.markdown-preview strong { font-weight: 700; }
+.markdown-preview em { font-style: italic; }
 
 .page[data-note-type="author"] {
   --page-font: 'Lora', Georgia, serif;
