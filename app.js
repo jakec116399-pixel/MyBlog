@@ -393,6 +393,7 @@ function applyAppearance(noteType, theme, fontSize) {
 
 // ---------- Page tabs ----------
 function renderPageTabs() {
+  pageTabsEl.classList.toggle("tabs-visible", pages.length > 1);
   pageTabsEl.innerHTML = "";
   if (pages.length <= 1) return;
 
@@ -561,6 +562,15 @@ function renumberPositions() {
   });
 }
 
+// A brief, tangible pulse so it's obvious you've landed on a new (or
+// previous) page, rather than the content just silently changing underneath you.
+function flashPageTransition() {
+  pageEl.classList.remove("page-flash");
+  void pageEl.offsetWidth; // restart the animation even if triggered again quickly
+  pageEl.classList.add("page-flash");
+  setTimeout(() => pageEl.classList.remove("page-flash"), 500);
+}
+
 // Keeps the caret visible as you type past the bottom of the visible
 // viewport — necessary because the page can be taller than the window,
 // and the browser's native "scroll input into view" doesn't reliably
@@ -672,6 +682,7 @@ function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
 
 function runReflowFromEditor() {
   if (!currentPageId) return;
+  const previousPageId = currentPageId;
 
   const [chainStart, chainEnd] = getChainIndices(currentPageId);
   const currentIdxInChain = pages.findIndex((p) => p.id === currentPageId) - chainStart;
@@ -692,6 +703,7 @@ function runReflowFromEditor() {
   editorInput.selectionStart = localOffset;
   editorInput.selectionEnd = localOffset;
   titleInput.classList.toggle("title-hidden", shouldHideTitle(targetPage));
+  if (currentPageId !== previousPageId) flashPageTransition();
 
   renderPageTabs();
   scheduleSave();
@@ -752,6 +764,7 @@ function mergeAcrossBoundary(direction) {
   editorInput.selectionStart = localOffset;
   editorInput.selectionEnd = localOffset;
   titleInput.classList.toggle("title-hidden", shouldHideTitle(targetPage));
+  flashPageTransition();
   editorInput.focus();
 
   renderPageTabs();
