@@ -90,6 +90,7 @@ const deleteEntryBtn = document.getElementById("delete-entry-btn");
 const fontSizeSelect = document.getElementById("font-size-select");
 const noteTypeSelect = document.getElementById("note-type-select");
 const themeSelect = document.getElementById("theme-select");
+const installBtn = document.getElementById("install-btn");
 const zoomInBtn = document.getElementById("zoom-in-btn");
 const zoomOutBtn = document.getElementById("zoom-out-btn");
 const zoomResetBtn = document.getElementById("zoom-reset-btn");
@@ -344,6 +345,7 @@ async function openEntry(id, preloadedPages) {
   loadPageIntoEditor(currentPageId);
   showEditor();
   fitToWidth();
+  pageWrapEl.scrollTop = 0;
   renderTree();
   editorInput.focus();
 }
@@ -407,6 +409,7 @@ async function switchToPage(pageId) {
   loadPageIntoEditor(pageId);
   renderPageTabs();
   fitToWidth();
+  pageWrapEl.scrollTop = 0;
 }
 
 async function deletePage(pageId) {
@@ -541,6 +544,33 @@ function renumberPositions() {
   });
 }
 
+// Keeps the caret visible as you type past the bottom of the visible
+// viewport — necessary because the page can be taller than the window,
+// and the browser's native "scroll input into view" doesn't reliably
+// account for our zoom transform.
+function scrollCaretIntoView() {
+  const textBeforeCaret = editorInput.value.slice(0, editorInput.selectionStart);
+  const style = getComputedStyle(editorInput);
+  measureMirror.style.width = editorInput.clientWidth + "px";
+  measureMirror.style.fontFamily = style.fontFamily;
+  measureMirror.style.fontSize = style.fontSize;
+  measureMirror.style.lineHeight = style.lineHeight;
+  measureMirror.style.letterSpacing = style.letterSpacing;
+  measureMirror.textContent = textBeforeCaret || " ";
+  const caretYUnscaled = measureMirror.scrollHeight;
+
+  const editorRect = editorInput.getBoundingClientRect();
+  const wrapRect = pageWrapEl.getBoundingClientRect();
+  const caretScreenY = editorRect.top + caretYUnscaled * zoom;
+  const margin = 32;
+
+  if (caretScreenY > wrapRect.bottom - margin) {
+    pageWrapEl.scrollTop += caretScreenY - wrapRect.bottom + margin;
+  } else if (caretScreenY < wrapRect.top + margin) {
+    pageWrapEl.scrollTop -= wrapRect.top + margin - caretScreenY;
+  }
+}
+
 function reflowChain(chainStart, chainEnd, fullText, caretAbsOffset) {
   const templatePage = pages[chainStart];
   const width = editorInput.clientWidth;
@@ -648,6 +678,7 @@ function runReflowFromEditor() {
 
   renderPageTabs();
   scheduleSave();
+  scrollCaretIntoView();
 }
 
 editorInput.addEventListener("input", () => {
@@ -708,6 +739,7 @@ function mergeAcrossBoundary(direction) {
 
   renderPageTabs();
   scheduleSave();
+  scrollCaretIntoView();
 }
 
 // ---------- Ribbon controls: font size, note type, theme ----------
@@ -793,6 +825,7 @@ function wrapSelection(before, after) {
   editorInput.selectionEnd = start + before.length + selected.length;
   editorInput.focus();
   runReflowFromEditor();
+  scrollCaretIntoView();
 }
 
 // ---------- Fit-to-width view, native scroll, zoom-to-shrink ----------
@@ -851,6 +884,31 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch((err) => console.error(err));
   });
 }
+
+// The browser only offers to install once it judges the app installable
+// (valid manifest + service worker + HTTPS). We capture that moment and
+// hold onto it so our own ribbon button can trigger it on demand, instead
+// of relying on the browser's own address-bar icon.
+let deferredInstallPrompt = null;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  installBtn.classList.remove("hidden");
+});
+
+installBtn.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  installBtn.classList.add("hidden");
+});
+
+window.addEventListener("appinstalled", () => {
+  installBtn.classList.add("hidden");
+  deferredInstallPrompt = null;
+});
 
 // ---------- Boot ----------
 applyAppearance("plain", "classic", 15);
